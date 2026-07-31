@@ -1,0 +1,51 @@
+name: Product decision
+description: Propose an unresolved product or engineering decision with evidence
+title: "[Decision]: "
+body:
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Backlog priority
+      description: Select the dependency-based priority from BACKLOG.md.
+      options:
+        - P0 - required before implementation
+        - P1 - first usable vertical slice
+        - P2 - quality once the interface is known
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence and user need
+      description: Cite repository files, workflows, or validated user needs.
+      placeholder: What evidence makes this decision necessary?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed decision
+      description: State the decision and the behavior it enables.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives and tradeoffs
+      description: Include the do-nothing option and why alternatives were rejected.
+    validations:
+      required: true
+  - type: textarea
+    id: risks
+    attributes:
+      label: Risks
+      description: Cover security, privacy, reliability, accessibility, and compatibility as applicable.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: List observable conditions that prove the decision is implemented.
+    validations:
+      required: true
