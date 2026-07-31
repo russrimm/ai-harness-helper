@@ -1,0 +1,18 @@
+# Local secrets
+.env
+.env.local
+.env.*.local
+*.key
+*.p12
+*.pfx
+
+# Editor and operating-system files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Logs and temporary files
+*.log
+tmp/
+temp/
