@@ -9,7 +9,7 @@ import { addProject, getOverview, postScan, removeProject } from '../api/client.
 import { Badge } from '../components/Badge.js';
 import { StatCard } from '../components/StatCard.js';
 import { EmptyState, ErrorState, LoadingState } from '../components/StatusStates.js';
-import { describeError } from '../hooks/useAsync.js';
+import { describeError, isRetryable } from '../hooks/useAsync.js';
 import type { FindingSeverity, HealthFinding, OverviewResponse } from '../api/types.js';
 
 const SEVERITY_ORDER: Record<FindingSeverity, number> = { error: 0, warning: 1, info: 2 };
@@ -22,6 +22,7 @@ const SEVERITY_VARIANT: Record<FindingSeverity, 'error' | 'warning' | 'info'> = 
 export function OverviewView(): ReactElement {
   const [data, setData] = useState<OverviewResponse | undefined>(undefined);
   const [error, setError] = useState<string | undefined>(undefined);
+  const [retryable, setRetryable] = useState(true);
   const [loading, setLoading] = useState(true);
   const [scanning, setScanning] = useState(false);
   const [newRoot, setNewRoot] = useState('');
@@ -31,10 +32,12 @@ export function OverviewView(): ReactElement {
   const load = useCallback(async () => {
     setLoading(true);
     setError(undefined);
+    setRetryable(true);
     try {
       setData(await getOverview());
     } catch (caught) {
       setError(describeError(caught));
+      setRetryable(isRetryable(caught));
     } finally {
       setLoading(false);
     }
@@ -51,6 +54,7 @@ export function OverviewView(): ReactElement {
       await load();
     } catch (caught) {
       setError(describeError(caught));
+      setRetryable(isRetryable(caught));
     } finally {
       setScanning(false);
     }
@@ -87,7 +91,9 @@ export function OverviewView(): ReactElement {
   };
 
   if (loading && !data) return <LoadingState label="Scanning your machine…" />;
-  if (error && !data) return <ErrorState message={error} onRetry={() => void load()} />;
+  if (error && !data) {
+    return <ErrorState message={error} {...(retryable ? { onRetry: () => void load() } : {})} />;
+  }
   if (!data) return <EmptyState title="No scan data yet." />;
 
   const sortedFindings = [...data.findings].sort(

@@ -182,7 +182,11 @@ export function FilesView({ initialFileId }: { initialFileId: string | undefined
   };
 
   if (scan.loading) return <LoadingState label="Loading discovered files…" />;
-  if (scan.error) return <ErrorState message={scan.error} onRetry={scan.reload} />;
+  if (scan.error) {
+    return (
+      <ErrorState message={scan.error} {...(scan.retryable ? { onRetry: scan.reload } : {})} />
+    );
+  }
   if (!scan.data || scan.data.tree.length === 0) {
     return (
       <EmptyState

@@ -73,6 +73,49 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * Raised when the request never reached the server at all.
+ *
+ * This is the *expected* end state for this app rather than an exotic one: the
+ * UI is served by a CLI the user eventually stops, and because routing is
+ * hash-based a stale tab keeps rendering happily until some view fetches. It
+ * is kept distinct from `ApiError` because the two need opposite advice —
+ * an HTTP failure may be worth retrying, a missing server never is.
+ */
+export class NetworkError extends Error {
+  constructor(cause?: unknown) {
+    super('The local server did not respond.');
+    this.name = 'NetworkError';
+    if (cause !== undefined) this.cause = cause;
+  }
+}
+
+/**
+ * Normalises the rejection produced when a connection cannot be made.
+ *
+ * Both `fetch` and dynamic `import()` reject with a `TypeError` in that case
+ * — the browser strings are "Failed to fetch" and "Failed to fetch
+ * dynamically imported module". Anything else (an abort, a real programming
+ * error) is passed through untouched so it is not mislabelled as an outage.
+ */
+export function asTransportError(caught: unknown): unknown {
+  return caught instanceof TypeError ? new NetworkError(caught) : caught;
+}
+
+/**
+ * `fetch` rejects with a bare `TypeError` whose message is the browser's own
+ * "Failed to fetch" when a connection cannot be made. Translating it at the
+ * single point where it can occur means no caller has to recognise that
+ * string, and the user never sees it.
+ */
+async function fetchOrThrow(input: string, init?: RequestInit): Promise<Response> {
+  try {
+    return await fetch(input, init);
+  } catch (caught) {
+    throw asTransportError(caught);
+  }
+}
+
 async function readJson(response: Response): Promise<unknown> {
   const text = await response.text();
   if (text.length === 0) return undefined;
@@ -84,7 +127,7 @@ async function readJson(response: Response): Promise<unknown> {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(path, {
+  const response = await fetchOrThrow(path, {
     ...init,
     headers: {
       ...(init?.headers ?? {}),
@@ -140,14 +183,15 @@ export function revealFileValue(id: string, redactionId: string): Promise<{ valu
  * Writes a file. Unlike other endpoints this returns its failure shape
  * (`WriteOutcome` with `ok: false`) instead of throwing, because a refusal
  * such as `hash-mismatch` is an expected outcome the caller must present to
- * the user, not a transport error.
+ * the user, not a transport error. A genuinely unreachable server still
+ * throws `NetworkError`, since no outcome was ever decided.
  */
 export async function putFile(
   id: string,
   content: string,
   expectedHash: string,
 ): Promise<WriteOutcome> {
-  const response = await fetch(`/api/files/${encodeURIComponent(id)}`, {
+  const response = await fetchOrThrow(`/api/files/${encodeURIComponent(id)}`, {
     method: 'PUT',
     headers: {
       'content-type': 'application/json',
@@ -199,7 +243,7 @@ export function search(params: SearchParams): Promise<SearchResponse> {
 export async function fetchExport(
   format: 'json' | 'markdown',
 ): Promise<{ text: string; contentType: string }> {
-  const response = await fetch(`/api/export?format=${format}`, {
+  const response = await fetchOrThrow(`/api/export?format=${format}`, {
     headers: { 'x-harness-token': token },
   });
   if (!response.ok) {

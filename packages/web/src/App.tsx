@@ -2,6 +2,7 @@ import type { ReactElement } from 'react';
 import { getHealth } from './api/client.js';
 import { Nav } from './components/Nav.js';
 import { ThemeToggle } from './components/ThemeToggle.js';
+import { ViewErrorBoundary } from './components/ViewErrorBoundary.js';
 import { useAsync } from './hooks/useAsync.js';
 import { splitFirstSegment, useHashLocation } from './hooks/useHashLocation.js';
 import { useTheme } from './hooks/useTheme.js';
@@ -40,13 +41,16 @@ export function App(): ReactElement {
         <Nav currentBase={base} />
       </header>
       <main id="main-content">
-        {base === '/files' ? <FilesView initialFileId={rest} /> : null}
-        {base === '/mcp' ? <McpView /> : null}
-        {base === '/instructions' ? <InstructionsView /> : null}
-        {base === '/search' ? <SearchView initialQuery={location.params.get('q') ?? ''} /> : null}
-        {base === '/export' ? <ExportView /> : null}
-        {base === '/' ? <OverviewView /> : null}
-        {!KNOWN_BASES.includes(base) ? <NotFound /> : null}
+        {/* Keyed by route so navigating away clears a failed view. */}
+        <ViewErrorBoundary key={base}>
+          {base === '/files' ? <FilesView initialFileId={rest} /> : null}
+          {base === '/mcp' ? <McpView /> : null}
+          {base === '/instructions' ? <InstructionsView /> : null}
+          {base === '/search' ? <SearchView initialQuery={location.params.get('q') ?? ''} /> : null}
+          {base === '/export' ? <ExportView /> : null}
+          {base === '/' ? <OverviewView /> : null}
+          {!KNOWN_BASES.includes(base) ? <NotFound /> : null}
+        </ViewErrorBoundary>
       </main>
     </>
   );
