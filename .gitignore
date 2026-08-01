@@ -16,3 +16,13 @@ Thumbs.db
 *.log
 tmp/
 temp/
+
+# Node build output and dependencies
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+packages/cli/public/
+
+# Local scan state written by the app at runtime
+.ai-harness-helper/

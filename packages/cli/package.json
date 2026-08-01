@@ -1,0 +1,24 @@
+{
+  "name": "ai-harness-helper",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Discover, inspect, and edit every agentic AI harness configuration file on your machine.",
+  "bin": {
+    "ai-harness-helper": "./dist/bin.js"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "public"
+  ],
+  "scripts": {
+    "build": "tsc --build && node ./scripts/copy-web-assets.js",
+    "typecheck": "tsc --noEmit --project tsconfig.json"
+  },
+  "dependencies": {
+    "@ai-harness-helper/core": "0.1.0",
+    "@fastify/static": "^10.1.2",
+    "fastify": "^5.10.0"
+  }
+}

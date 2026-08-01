@@ -1,0 +1,28 @@
+{
+  "name": "@ai-harness-helper/core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Discovery, parsing, redaction, and safe-write engine for AI Harness Helper.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc --build",
+    "typecheck": "tsc --noEmit --project tsconfig.json"
+  },
+  "dependencies": {
+    "jsonc-parser": "^3.3.1",
+    "smol-toml": "^1.4.2",
+    "tinyglobby": "^0.2.15",
+    "yaml": "^2.8.1"
+  }
+}
