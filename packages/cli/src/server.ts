@@ -175,6 +175,64 @@ export async function createServer(options: ServerOptions): Promise<HarnessServe
     },
   );
 
+  app.get('/api/capabilities', async () => service.listCapabilities());
+
+  app.get<{ Params: { id: string }; Querystring: { reveal?: string } }>(
+    '/api/capabilities/:id',
+    async (request, reply) => {
+      const wantsSecrets = request.query.reveal === 'true';
+      const document = await service.getCapabilityDocument(request.params.id, wantsSecrets);
+      if (!document) {
+        return reply
+          .code(404)
+          .send({ error: 'No such agent or skill, or it is not in the scanned set.' });
+      }
+      return document;
+    },
+  );
+
+  app.put<{
+    Params: { id: string };
+    Body: {
+      expectedHash?: string;
+      name?: string;
+      description?: string;
+      model?: string;
+      version?: string;
+      tools?: unknown;
+      body?: string;
+    };
+  }>('/api/capabilities/:id', async (request, reply) => {
+    if (service.readOnly) {
+      return reply.code(403).send({ error: 'This session is read-only.', code: 'read-only' });
+    }
+
+    const payload = request.body ?? {};
+    if (typeof payload.expectedHash !== 'string') {
+      return reply.code(400).send({ error: 'expectedHash is required.' });
+    }
+
+    const edit = readCapabilityEdit(payload);
+    if ('error' in edit) {
+      return reply.code(400).send({ error: edit.error });
+    }
+
+    const outcome = await service.writeCapabilityDocument(
+      request.params.id,
+      edit.value,
+      payload.expectedHash,
+    );
+    if (!outcome) {
+      return reply
+        .code(404)
+        .send({ error: 'No such agent or skill, or it is not in the scanned set.' });
+    }
+    if (!outcome.ok) {
+      return reply.code(statusForRefusal(outcome.code)).send(outcome);
+    }
+    return outcome;
+  });
+
   app.get('/api/projects', async () => ({ roots: service.projectRoots }));
 
   app.post<{ Body: { path?: string } }>('/api/projects', async (request, reply) => {
@@ -243,6 +301,49 @@ function extractToken(request: FastifyRequest): string | undefined {
 
   const query = (request.query as { token?: unknown } | undefined)?.token;
   return typeof query === 'string' && query.length > 0 ? query : undefined;
+}
+
+/**
+ * Validates a structured capability edit from an untrusted body.
+ *
+ * Absent fields mean "leave this alone" and empty strings mean "remove this
+ * key", so the two are kept distinct all the way through rather than being
+ * collapsed by a default. Anything of the wrong type is rejected outright
+ * instead of being coerced, because a coerced `tools: "read"` would silently
+ * rewrite a list as a string.
+ */
+function readCapabilityEdit(payload: {
+  name?: unknown;
+  description?: unknown;
+  model?: unknown;
+  version?: unknown;
+  tools?: unknown;
+  body?: unknown;
+}): { value: Parameters<HarnessService['writeCapabilityDocument']>[1] } | { error: string } {
+  const edit: {
+    name?: string;
+    description?: string;
+    model?: string;
+    version?: string;
+    tools?: string[];
+    body?: string;
+  } = {};
+
+  for (const key of ['name', 'description', 'model', 'version', 'body'] as const) {
+    const value = payload[key];
+    if (value === undefined) continue;
+    if (typeof value !== 'string') return { error: `${key} must be a string.` };
+    edit[key] = value;
+  }
+
+  if (payload.tools !== undefined) {
+    if (!Array.isArray(payload.tools) || payload.tools.some((item) => typeof item !== 'string')) {
+      return { error: 'tools must be an array of strings.' };
+    }
+    edit.tools = payload.tools as string[];
+  }
+
+  return { value: edit };
 }
 
 function statusForRefusal(code: string): number {

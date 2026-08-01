@@ -125,4 +125,24 @@ alwaysApply: false
 
 Prefer named exports.
 `,
+
+  /**
+   * A skill in the published shape: front matter this build models, plus a
+   * key it does not, so tests can prove the unmodelled key survives an edit.
+   */
+  skillFile: `---
+name: pdf-extractor
+description: Extracts text and tables from PDF files
+model: claude-opus-4.5
+version: 1.2.0
+tools:
+  - read
+  - bash
+license: Apache-2.0
+---
+
+# PDF extractor
+
+Use \`pdftotext\` before falling back to OCR.
+`,
 } as const;

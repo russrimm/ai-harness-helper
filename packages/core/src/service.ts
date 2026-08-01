@@ -7,12 +7,24 @@
  */
 
 import { readFile } from 'node:fs/promises';
-import { isAbsolute, resolve, sep } from 'node:path';
+import { basename, dirname, isAbsolute, resolve, sep } from 'node:path';
 
 import { aggregate, type HarnessInventory } from './aggregate.js';
+import {
+  applyCapabilityEdits,
+  isCapabilityFormat,
+  parseCapabilityDocument,
+  validateCapabilityDocument,
+  type CapabilityDocumentBody,
+} from './capability-doc.js';
 import { editorLanguage, parseContent, type ParseIssue } from './parsers.js';
 import { createEnvironment, selectPlatformTemplates, toDisplayPath } from './paths.js';
-import { redactDocumentText, resolveRedactionPath, type RedactionRecord } from './redact.js';
+import {
+  redactDocumentText,
+  resolveRedactionPath,
+  REDACTED_PLACEHOLDER,
+  type RedactionRecord,
+} from './redact.js';
 import { providers as registryProviders } from './registry.js';
 import { groupByProvider, scan, type DiscoveredFile, type ScanResult } from './scanner.js';
 import type {
@@ -160,6 +172,103 @@ export interface HarnessServiceOptions {
   readonly projectRoots?: readonly string[];
   readonly readOnly?: boolean;
   readonly writerOptions?: WriterOptions;
+}
+
+/** Kinds the structured capability editor can open. */
+export type EditableCapabilityKind = Extract<
+  FileKind,
+  'agent' | 'skill' | 'command' | 'prompt' | 'chatmode'
+>;
+
+const EDITABLE_CAPABILITY_KINDS = new Set<FileKind>([
+  'agent',
+  'skill',
+  'command',
+  'prompt',
+  'chatmode',
+]);
+
+/** One capability as it appears in the editor's list. */
+export interface CapabilitySummary {
+  readonly fileId: string;
+  readonly kind: EditableCapabilityKind;
+  /** Front-matter `name`, falling back to the file name. */
+  readonly name: string;
+  readonly description?: string;
+  readonly model?: string;
+  readonly version?: string;
+  readonly tools: readonly string[];
+  readonly providerId: string;
+  readonly providerName: string;
+  readonly locationLabel: string;
+  readonly scope: ConfigScope;
+  readonly fileName: string;
+  readonly directory: string;
+  readonly displayPath: string;
+  readonly projectRoot?: string;
+  readonly size: number;
+  readonly modified: string;
+  /** True when this session would accept an edit to the file. */
+  readonly editable: boolean;
+  readonly notEditableReason?: string;
+  /** True when the front matter could not be parsed. */
+  readonly malformed: boolean;
+}
+
+/** The capability list, plus the vocabulary the editor offers as suggestions. */
+export interface CapabilityListResult {
+  readonly capabilities: readonly CapabilitySummary[];
+  /**
+   * Every distinct model already named by a capability on this machine.
+   *
+   * Offered as suggestions rather than as the only permitted values: a closed
+   * list would go stale the week after it shipped and would block a user from
+   * naming a model this build has never heard of.
+   */
+  readonly knownModels: readonly string[];
+  /** Every distinct tool name already declared, for the same reason. */
+  readonly knownTools: readonly string[];
+  readonly readOnly: boolean;
+}
+
+/** One capability file opened for structured editing. */
+export interface CapabilityDocument {
+  readonly file: DiscoveredFile;
+  readonly kind: EditableCapabilityKind;
+  /** Front-matter fields the form owns. */
+  readonly fields: {
+    readonly name?: string;
+    readonly description?: string;
+    readonly model?: string;
+    readonly version?: string;
+    readonly tools?: readonly string[];
+  };
+  /** Markdown body, masked unless secrets were explicitly requested. */
+  readonly body: string;
+  /** Whole file as text, for the preview and the save diff. */
+  readonly content: string;
+  /** True when `body` and `content` still contain live secrets. */
+  readonly revealed: boolean;
+  readonly redactions: readonly RedactionRecord[];
+  /** True when the file opened with a `---` block. */
+  readonly hasFrontmatter: boolean;
+  /** Front-matter keys preserved on write but not editable in the form. */
+  readonly extraKeys: readonly string[];
+  /** Hash of the unmasked file, for optimistic concurrency on write. */
+  readonly hash: string;
+  readonly issues: readonly ParseIssue[];
+  readonly readOnly: boolean;
+  readonly readOnlyReason?: string;
+}
+
+/** A structured edit. Omitted fields are left exactly as they are on disk. */
+export interface CapabilityEdit {
+  readonly name?: string;
+  readonly description?: string;
+  readonly model?: string;
+  readonly version?: string;
+  readonly tools?: readonly string[];
+  readonly body?: string;
 }
 
 /** Maximum bytes of a single file returned to the client. */
@@ -587,6 +696,223 @@ export class HarnessService {
     return outcome;
   }
 
+  /* ------------------------------------------- Structured capability edit -- */
+
+  /**
+   * Lists every agent, skill, command, prompt, and chat mode the form editor
+   * can open.
+   *
+   * Built by re-reading each file rather than by reusing the inventory,
+   * because the inventory deliberately normalizes a capability's name (falling
+   * back to the file name and then to the first heading) and the editor has to
+   * show what the front matter literally says — otherwise a file with no
+   * `name:` would appear to have one, and saving would write it in.
+   */
+  async listCapabilities(): Promise<CapabilityListResult> {
+    const result = await this.getScan();
+    const capabilities: CapabilitySummary[] = [];
+    const models = new Set<string>();
+    const tools = new Set<string>();
+
+    for (const file of result.files) {
+      if (!this.#isCapabilityFile(file)) continue;
+
+      let parsed: ReturnType<typeof parseCapabilityDocument> | undefined;
+      try {
+        parsed = parseCapabilityDocument(await readFile(file.path, 'utf8'));
+      } catch {
+        // An unreadable file is still worth listing: the row explains why it
+        // cannot be opened, which beats it vanishing from the list entirely.
+      }
+
+      const blocked = this.#editBlockReason(file);
+      if (parsed?.model) models.add(parsed.model);
+      for (const tool of parsed?.tools ?? []) tools.add(tool);
+
+      capabilities.push({
+        fileId: file.id,
+        kind: file.kind as EditableCapabilityKind,
+        name: parsed?.name ?? fallbackCapabilityName(file),
+        ...(parsed?.description !== undefined ? { description: parsed.description } : {}),
+        ...(parsed?.model !== undefined ? { model: parsed.model } : {}),
+        ...(parsed?.version !== undefined ? { version: parsed.version } : {}),
+        tools: parsed?.tools ?? [],
+        providerId: file.providerId,
+        providerName: file.providerName,
+        locationLabel: file.locationLabel,
+        scope: file.scope,
+        fileName: file.name,
+        directory: file.directory,
+        displayPath: file.displayPath,
+        ...(file.projectRoot !== undefined ? { projectRoot: file.projectRoot } : {}),
+        size: file.size,
+        modified: file.modified,
+        editable: blocked === undefined && parsed !== undefined,
+        ...(blocked !== undefined
+          ? { notEditableReason: blocked }
+          : parsed === undefined
+            ? { notEditableReason: 'The file could not be read.' }
+            : {}),
+        malformed: (parsed?.issues.length ?? 0) > 0,
+      });
+    }
+
+    capabilities.sort((a, b) => a.kind.localeCompare(b.kind) || a.name.localeCompare(b.name));
+
+    return {
+      capabilities,
+      knownModels: [...models].sort((a, b) => a.localeCompare(b)),
+      knownTools: [...tools].sort((a, b) => a.localeCompare(b)),
+      readOnly: this.#readOnly,
+    };
+  }
+
+  /**
+   * Opens one capability as structured fields plus a body.
+   *
+   * `includeSecrets` follows the same two-step contract as
+   * {@link getDocument}: the form is populated from a masked copy for reading,
+   * and only entering edit mode fetches the real text. Saving a masked body
+   * would write `••••` into the user's instructions.
+   */
+  async getCapabilityDocument(
+    id: string,
+    includeSecrets = false,
+  ): Promise<CapabilityDocument | undefined> {
+    const file = this.findFile(id);
+    if (!file || !this.#isCapabilityFile(file)) return undefined;
+
+    const document = await this.getDocument(id, includeSecrets);
+    if (!document) return undefined;
+
+    const parsed = parseCapabilityDocument(document.content);
+
+    return {
+      file,
+      kind: file.kind as EditableCapabilityKind,
+      fields: {
+        ...(parsed.name !== undefined ? { name: parsed.name } : {}),
+        ...(parsed.description !== undefined ? { description: parsed.description } : {}),
+        ...(parsed.model !== undefined ? { model: parsed.model } : {}),
+        ...(parsed.version !== undefined ? { version: parsed.version } : {}),
+        ...(parsed.tools !== undefined ? { tools: parsed.tools } : {}),
+      },
+      body: parsed.body,
+      content: document.content,
+      revealed: document.revealed,
+      redactions: document.redactions,
+      hasFrontmatter: parsed.hasFrontmatter,
+      extraKeys: parsed.extraKeys,
+      hash: document.hash,
+      issues: [...document.issues, ...parsed.issues],
+      readOnly: document.readOnly,
+      ...(document.readOnlyReason !== undefined ? { readOnlyReason: document.readOnlyReason } : {}),
+    };
+  }
+
+  /**
+   * Applies a structured edit.
+   *
+   * The merge happens here, against the bytes currently on disk, so front
+   * matter this build does not model cannot be dropped by a client that never
+   * saw it. The caller supplies only the fields it means to change.
+   */
+  async writeCapabilityDocument(
+    id: string,
+    edit: CapabilityEdit,
+    expectedHash: string,
+  ): Promise<WriteOutcome | undefined> {
+    const file = this.findFile(id);
+    if (!file || !this.#isCapabilityFile(file)) return undefined;
+    if (!this.isAuthorized(file.path)) return undefined;
+
+    if (this.#readOnly) {
+      return {
+        ok: false,
+        code: 'read-only',
+        message: 'This session is read-only. Restart without --read-only to make changes.',
+      };
+    }
+
+    let current: string;
+    try {
+      current = await readFile(file.path, 'utf8');
+    } catch (error) {
+      return {
+        ok: false,
+        code: 'not-found',
+        message: `The file could not be read: ${describe(error)}`,
+      };
+    }
+
+    const currentHash = hashContent(current);
+    if (currentHash !== expectedHash) {
+      return {
+        ok: false,
+        code: 'hash-mismatch',
+        message:
+          'The file changed on disk since you loaded it. Reload to see the current contents, then reapply your edit.',
+        currentHash,
+      };
+    }
+
+    const edits: Partial<CapabilityDocumentBody> = {
+      ...(edit.name !== undefined ? { name: edit.name } : {}),
+      ...(edit.description !== undefined ? { description: edit.description } : {}),
+      ...(edit.model !== undefined ? { model: edit.model } : {}),
+      ...(edit.version !== undefined ? { version: edit.version } : {}),
+      ...(edit.tools !== undefined ? { tools: edit.tools } : {}),
+      ...(edit.body !== undefined ? { body: edit.body } : {}),
+    };
+
+    const content = applyCapabilityEdits(current, edits);
+
+    const maskWouldBeWritten =
+      content.includes(REDACTED_PLACEHOLDER.slice(0, 4)) &&
+      !current.includes(REDACTED_PLACEHOLDER.slice(0, 4));
+    if (maskWouldBeWritten) {
+      return {
+        ok: false,
+        code: 'invalid-content',
+        message:
+          'The edit contains masked placeholders, which would overwrite real values. Reopen the capability for editing and try again.',
+      };
+    }
+
+    const issues = validateCapabilityDocument(content);
+    if (issues.length > 0) {
+      return {
+        ok: false,
+        code: 'invalid-content',
+        message: `Front matter is not valid YAML: ${issues[0]?.message ?? 'parse failed'}`,
+        issues,
+      };
+    }
+
+    const outcome = await writeConfigFile(
+      {
+        path: file.path,
+        content,
+        format: file.format,
+        sensitivity: file.sensitivity,
+        expectedHash,
+      },
+      { ...this.#writerOptions, readOnly: this.#readOnly },
+    );
+
+    if (outcome.ok) await this.refresh();
+    return outcome;
+  }
+
+  /** True when a discovered file is a capability the form editor understands. */
+  #isCapabilityFile(file: DiscoveredFile): boolean {
+    return (
+      EDITABLE_CAPABILITY_KINDS.has(file.kind) &&
+      isCapabilityFormat(file.format) &&
+      file.sensitivity !== 'credential-store'
+    );
+  }
+
   /** Full-text search across discovered files, honouring redaction. */
   async search(options: SearchOptions): Promise<SearchResult> {
     const result = await this.getScan();
@@ -765,16 +1091,15 @@ export class HarnessService {
 
     lines.push('## Sources', '');
     for (const provider of sources.providers) {
-      lines.push(
-        `### ${provider.providerName}${provider.detected ? '' : ' (nothing found)'}`,
-        '',
-      );
+      lines.push(`### ${provider.providerName}${provider.detected ? '' : ' (nothing found)'}`, '');
       for (const location of provider.locations) {
         const where =
           location.checkedPaths.length > 0
             ? location.checkedPaths.join(', ')
             : location.templates.join(', ');
-        lines.push(`- ${location.locationLabel} (${location.scope}) — ${location.status}: ${where}`);
+        lines.push(
+          `- ${location.locationLabel} (${location.scope}) — ${location.status}: ${where}`,
+        );
       }
       lines.push('');
     }
@@ -798,6 +1123,26 @@ export class HarnessService {
     }
     return undefined;
   }
+}
+
+/**
+ * Names a capability that declares no `name:` in its front matter.
+ *
+ * A file named `reviewer.agent.md` invokes as `reviewer`. A `SKILL.md` is
+ * named by the folder that contains it, which is how every tool that ships
+ * skills-in-folders resolves them — falling back to the literal string
+ * "SKILL" would label every skill on the machine identically.
+ */
+function fallbackCapabilityName(file: DiscoveredFile): string {
+  const stripped = file.name.replace(
+    /(?:\.(?:prompt|instructions|chatmode|agent|skill))?\.(?:md|markdown|mdc)$/i,
+    '',
+  );
+  if (/^(skill|agent|readme|index)$/i.test(stripped)) {
+    const folder = basename(dirname(file.path));
+    if (folder.length > 0) return folder;
+  }
+  return stripped.length > 0 ? stripped : file.name;
 }
 
 function matchesFilters(file: DiscoveredFile, options: SearchOptions): boolean {
