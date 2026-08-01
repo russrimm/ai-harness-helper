@@ -7,6 +7,7 @@
  * across every tool so duplicates and conflicts become visible.
  */
 
+import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 
 import { parseContent } from './parsers.js';
@@ -22,14 +23,65 @@ import type { ConfigScope, FileFormat, FileKind } from './types.js';
 /** How an MCP client reaches a server. */
 export type McpTransport = 'stdio' | 'http' | 'sse' | 'websocket' | 'unknown';
 
+/**
+ * Where a declaration came from.
+ *
+ * Every synthesized entry carries this, because the product's core promise is
+ * that you can always tell which tool, which file, and which folder a setting
+ * is coming from without going hunting for it.
+ */
+export interface EntryProvenance {
+  /** Id of the file that declares it. */
+  readonly fileId: string;
+  readonly filePath: string;
+  readonly displayPath: string;
+  /** Containing folder, home-abbreviated. */
+  readonly directory: string;
+  readonly fileName: string;
+  readonly providerId: string;
+  readonly providerName: string;
+  /** Registry location that produced the file, e.g. "Global agents". */
+  readonly locationLabel: string;
+  readonly scope: ConfigScope;
+}
+
+/**
+ * How one entry relates to others that declare the same thing.
+ *
+ * `duplicated` is deliberately generous — any repeat of a name is surfaced, so
+ * the user sees every copy — while `conflicting` is deliberately strict: it
+ * only fires when a *single tool at a single scope* would see two different
+ * definitions and have to pick one. That split keeps the badges informative
+ * without turning legitimate layering (a project `AGENTS.md` refining a user
+ * one) into a false alarm.
+ */
+export interface DuplicateInfo {
+  /** Normalized identity, e.g. `agent:reviewer`. */
+  readonly key: string;
+  /** True when more than one file declares this key. */
+  readonly duplicated: boolean;
+  /** True when one tool sees two differing definitions of this key. */
+  readonly conflicting: boolean;
+  /** Other files declaring the same key. */
+  readonly siblingFileIds: readonly string[];
+  readonly siblingDisplayPaths: readonly string[];
+  /** Files whose content is byte-identical, whatever they are named. */
+  readonly identicalFileIds: readonly string[];
+}
+
 /** One MCP server definition, as declared by a single file. */
 export interface McpDefinition {
   /** Id of the file that declares it. */
   readonly fileId: string;
   readonly filePath: string;
   readonly displayPath: string;
+  /** Containing folder, home-abbreviated. */
+  readonly directory: string;
+  readonly fileName: string;
   readonly providerId: string;
   readonly providerName: string;
+  /** Registry location that produced the file. */
+  readonly locationLabel: string;
   readonly scope: ConfigScope;
   /** Project root when this definition came from a project-scoped file. */
   readonly projectRoot?: string;
@@ -63,6 +115,8 @@ export interface McpServerEntry {
   readonly definitions: readonly McpDefinition[];
   /** Distinct providers that declare this name. */
   readonly providerIds: readonly string[];
+  /** Distinct folders the definitions live in, for at-a-glance provenance. */
+  readonly directories: readonly string[];
   /** True when two or more definitions disagree about what the server is. */
   readonly conflicting: boolean;
   /** True when more than one file declares this name. */
@@ -70,12 +124,7 @@ export interface McpServerEntry {
 }
 
 /** An instruction document that shapes agent behaviour. */
-export interface InstructionEntry {
-  readonly fileId: string;
-  readonly displayPath: string;
-  readonly providerId: string;
-  readonly providerName: string;
-  readonly scope: ConfigScope;
+export interface InstructionEntry extends EntryProvenance {
   readonly projectRoot?: string;
   /** Title from front matter, a leading heading, or the file name. */
   readonly title: string;
@@ -90,15 +139,12 @@ export interface InstructionEntry {
    * over user-scoped guidance, which wins over machine-managed defaults.
    */
   readonly precedence: number;
+  /** How this document relates to others with the same title or content. */
+  readonly duplicate: DuplicateInfo;
 }
 
 /** An agent, skill, command, prompt, or chat mode the harness can invoke. */
-export interface CapabilityEntry {
-  readonly fileId: string;
-  readonly displayPath: string;
-  readonly providerId: string;
-  readonly providerName: string;
-  readonly scope: ConfigScope;
+export interface CapabilityEntry extends EntryProvenance {
   readonly kind: Extract<FileKind, 'agent' | 'skill' | 'command' | 'prompt' | 'chatmode'>;
   /** Invocation name, derived from front matter or the file name. */
   readonly name: string;
@@ -106,15 +152,13 @@ export interface CapabilityEntry {
   /** Tools the capability declares, when it declares any. */
   readonly tools?: readonly string[];
   readonly model?: string;
+  readonly projectRoot?: string;
+  /** How this capability relates to others with the same name or content. */
+  readonly duplicate: DuplicateInfo;
 }
 
 /** A permission rule, hook, or ignore file constraining agent behaviour. */
-export interface GuardrailEntry {
-  readonly fileId: string;
-  readonly displayPath: string;
-  readonly providerId: string;
-  readonly providerName: string;
-  readonly scope: ConfigScope;
+export interface GuardrailEntry extends EntryProvenance {
   readonly kind: Extract<FileKind, 'permissions' | 'ignore' | 'settings'>;
   readonly allow: readonly string[];
   readonly deny: readonly string[];
@@ -123,6 +167,9 @@ export interface GuardrailEntry {
   readonly hooks: readonly string[];
   /** Ignore-file patterns. */
   readonly ignorePatterns: readonly string[];
+  readonly projectRoot?: string;
+  /** How this guardrail relates to others with the same name or content. */
+  readonly duplicate: DuplicateInfo;
 }
 
 /** Severity of a health finding. */
@@ -132,6 +179,11 @@ export type FindingSeverity = 'info' | 'warning' | 'error';
 export type FindingCode =
   | 'mcp-duplicate'
   | 'mcp-conflict'
+  | 'capability-duplicate'
+  | 'capability-conflict'
+  | 'instruction-duplicate'
+  | 'instruction-conflict'
+  | 'guardrail-duplicate'
   | 'plaintext-secret'
   | 'unparseable-file'
   | 'empty-file'
@@ -167,6 +219,12 @@ export interface HarnessSummary {
   readonly findingCount: number;
   readonly errorCount: number;
   readonly warningCount: number;
+  /** Distinct names declared in more than one file, across every entity type. */
+  readonly duplicateCount: number;
+  /** Duplicate groups where one tool would see two differing definitions. */
+  readonly conflictCount: number;
+  /** Distinct folders configuration was found in. */
+  readonly directoryCount: number;
   readonly totalBytes: number;
 }
 
@@ -230,11 +288,13 @@ export async function aggregate(
   const load = options.loadContent ?? defaultLoader;
 
   const mcpDefinitions = new Map<string, McpDefinition[]>();
-  const instructions: InstructionEntry[] = [];
-  const capabilities: CapabilityEntry[] = [];
-  const guardrails: GuardrailEntry[] = [];
+  const instructionDrafts: InstructionDraft[] = [];
+  const capabilityDrafts: CapabilityDraft[] = [];
+  const guardrailDrafts: GuardrailDraft[] = [];
   const findings: HealthFinding[] = [];
   const parsedFileIds: string[] = [];
+  /** Content digests keyed by file id, used to tell a copy from a conflict. */
+  const contentHashes = new Map<string, string>();
 
   for (const file of scan.files) {
     if (file.sensitivity === 'credential-store') {
@@ -282,6 +342,7 @@ export async function aggregate(
 
     const parsed = parseContent(text, file.format);
     parsedFileIds.push(file.id);
+    contentHashes.set(file.id, digest(text));
 
     // The parsers here are deliberately tolerant so a broken file still
     // renders, but the tool that owns the file is not. Any syntax issue in a
@@ -312,15 +373,15 @@ export async function aggregate(
     }
 
     if (INSTRUCTION_KINDS.has(file.kind)) {
-      instructions.push(buildInstruction(file, text, parsed.frontmatter, parsed.body ?? text));
+      instructionDrafts.push(buildInstruction(file, text, parsed.frontmatter, parsed.body ?? text));
     }
 
     if (CAPABILITY_KINDS.has(file.kind)) {
-      capabilities.push(buildCapability(file, parsed.frontmatter, parsed.body ?? text));
+      capabilityDrafts.push(buildCapability(file, parsed.frontmatter, parsed.body ?? text));
     }
 
     const guardrail = buildGuardrail(file, parsed.value, text);
-    if (guardrail) guardrails.push(guardrail);
+    if (guardrail) guardrailDrafts.push(guardrail);
 
     const secretPaths = file.kind === 'catalog' ? [] : findPlaintextSecrets(parsed.value);
     if (secretPaths.length > 0) {
@@ -373,6 +434,42 @@ export async function aggregate(
   const mcpServers = buildMcpEntries(mcpDefinitions);
   findings.push(...mcpFindings(mcpServers));
 
+  const instructions = attachDuplicates(
+    instructionDrafts,
+    (entry) => `instructions:${normalizeIdentity(entry.title)}`,
+    contentHashes,
+  );
+  const capabilities = attachDuplicates(
+    capabilityDrafts,
+    (entry) => `${entry.kind}:${normalizeIdentity(entry.name)}`,
+    contentHashes,
+  );
+  const guardrails = attachDuplicates(
+    guardrailDrafts,
+    (entry) => `${entry.kind}:${normalizeIdentity(entry.fileName)}`,
+    contentHashes,
+  );
+
+  findings.push(
+    ...duplicateFindings(instructions, {
+      duplicateCode: 'instruction-duplicate',
+      conflictCode: 'instruction-conflict',
+      noun: 'instruction document',
+      labelOf: (entry) => entry.title,
+    }),
+    ...duplicateFindings(capabilities, {
+      duplicateCode: 'capability-duplicate',
+      conflictCode: 'capability-conflict',
+      noun: 'capability',
+      labelOf: (entry) => `${entry.kind} "${entry.name}"`,
+    }),
+    ...duplicateFindings(guardrails, {
+      duplicateCode: 'guardrail-duplicate',
+      noun: 'guardrail file',
+      labelOf: (entry) => entry.fileName,
+    }),
+  );
+
   instructions.sort(
     (a, b) => b.precedence - a.precedence || a.displayPath.localeCompare(b.displayPath),
   );
@@ -385,6 +482,7 @@ export async function aggregate(
   );
 
   const definitionCount = mcpServers.reduce((sum, entry) => sum + entry.definitions.length, 0);
+  const duplicateGroups = countDuplicateGroups(mcpServers, instructions, capabilities, guardrails);
 
   return {
     summary: {
@@ -398,6 +496,9 @@ export async function aggregate(
       findingCount: findings.length,
       errorCount: findings.filter((f) => f.severity === 'error').length,
       warningCount: findings.filter((f) => f.severity === 'warning').length,
+      duplicateCount: duplicateGroups.duplicated,
+      conflictCount: duplicateGroups.conflicting,
+      directoryCount: new Set(scan.files.map((file) => file.directory)).size,
       totalBytes: scan.files.reduce((sum, f) => sum + f.size, 0),
     },
     mcpServers,
@@ -407,6 +508,11 @@ export async function aggregate(
     findings,
     parsedFileIds,
   };
+}
+
+/** SHA-256 of a document, used only to compare two documents to each other. */
+function digest(text: string): string {
+  return createHash('sha256').update(text).digest('hex');
 }
 
 async function defaultLoader(file: DiscoveredFile): Promise<string | undefined> {
@@ -430,6 +536,211 @@ function describeProblem(code: string): string {
 
 function severityRank(severity: FindingSeverity): number {
   return severity === 'error' ? 2 : severity === 'warning' ? 1 : 0;
+}
+
+/* ------------------------------------------------------------ Duplicates -- */
+
+/** An entry before duplicate analysis has been attached to it. */
+type InstructionDraft = Omit<InstructionEntry, 'duplicate'>;
+type CapabilityDraft = Omit<CapabilityEntry, 'duplicate'>;
+type GuardrailDraft = Omit<GuardrailEntry, 'duplicate'>;
+
+/** The fields duplicate analysis needs, whatever kind of entry it is. */
+interface DuplicateCandidate {
+  readonly fileId: string;
+  readonly displayPath: string;
+  readonly providerId: string;
+  readonly scope: ConfigScope;
+}
+
+/** Case- and punctuation-insensitive identity, so `Reviewer` matches `reviewer`. */
+function normalizeIdentity(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/\.(md|markdown|mdc|json|jsonc|yaml|yml|toml)$/i, '')
+    .replace(/[\s_]+/g, '-');
+}
+
+/**
+ * Cross-references entries of one type and records how each relates to the
+ * others.
+ *
+ * Two passes are needed rather than one: a name group answers "what else is
+ * called this?", and a content group answers "what else *is* this?" — the
+ * common case of a single document copied under several names for several
+ * tools, which no name comparison would ever catch.
+ */
+function attachDuplicates<T extends DuplicateCandidate>(
+  drafts: readonly T[],
+  keyOf: (draft: T) => string,
+  hashes: ReadonlyMap<string, string>,
+): Array<T & { duplicate: DuplicateInfo }> {
+  const byKey = new Map<string, T[]>();
+  const byHash = new Map<string, T[]>();
+
+  for (const draft of drafts) {
+    const key = keyOf(draft);
+    const keyGroup = byKey.get(key);
+    if (keyGroup) keyGroup.push(draft);
+    else byKey.set(key, [draft]);
+
+    const hash = hashes.get(draft.fileId);
+    if (hash === undefined) continue;
+    const hashGroup = byHash.get(hash);
+    if (hashGroup) hashGroup.push(draft);
+    else byHash.set(hash, [draft]);
+  }
+
+  return drafts.map((draft) => {
+    const key = keyOf(draft);
+    const group = byKey.get(key) ?? [draft];
+    const siblings = group.filter((other) => other.fileId !== draft.fileId);
+
+    const hash = hashes.get(draft.fileId);
+    const identical =
+      hash === undefined
+        ? []
+        : (byHash.get(hash) ?? []).filter(
+            (other) => other.fileId !== draft.fileId && keyOf(other) !== key,
+          );
+
+    return {
+      ...draft,
+      duplicate: {
+        key,
+        duplicated: siblings.length > 0,
+        conflicting: groupConflicts(group, hashes),
+        siblingFileIds: siblings.map((entry) => entry.fileId),
+        siblingDisplayPaths: siblings.map((entry) => entry.displayPath),
+        identicalFileIds: identical.map((entry) => entry.fileId),
+      },
+    };
+  });
+}
+
+/**
+ * True when one tool, at one scope, would see two *different* definitions of
+ * the same name.
+ *
+ * The provider and scope partition matters: a project `AGENTS.md` refining a
+ * user-level one is layering the tools are designed for, not a conflict, and
+ * reporting it as one would train users to ignore the finding that matters.
+ */
+function groupConflicts<T extends DuplicateCandidate>(
+  group: readonly T[],
+  hashes: ReadonlyMap<string, string>,
+): boolean {
+  const byOwner = new Map<string, Set<string>>();
+
+  for (const entry of group) {
+    const hash = hashes.get(entry.fileId);
+    if (hash === undefined) continue;
+    const owner = `${entry.providerId}|${entry.scope}`;
+    const seen = byOwner.get(owner);
+    if (seen) seen.add(hash);
+    else byOwner.set(owner, new Set([hash]));
+  }
+
+  return [...byOwner.values()].some((hashSet) => hashSet.size > 1);
+}
+
+interface DuplicateFindingConfig<T> {
+  readonly duplicateCode: FindingCode;
+  /** Omitted for entity types where "one tool sees two" is not meaningful. */
+  readonly conflictCode?: FindingCode;
+  readonly noun: string;
+  readonly labelOf: (entry: T) => string;
+}
+
+/** Turns duplicate analysis into findings, one per group rather than per file. */
+function duplicateFindings<T extends DuplicateCandidate & { duplicate: DuplicateInfo }>(
+  entries: readonly T[],
+  config: DuplicateFindingConfig<T>,
+): HealthFinding[] {
+  const findings: HealthFinding[] = [];
+  const seenKeys = new Set<string>();
+  const seenCopies = new Set<string>();
+  const byId = new Map(entries.map((entry) => [entry.fileId, entry]));
+
+  for (const entry of entries) {
+    const { duplicate } = entry;
+
+    if (duplicate.duplicated && !seenKeys.has(duplicate.key)) {
+      seenKeys.add(duplicate.key);
+      const fileIds = [entry.fileId, ...duplicate.siblingFileIds];
+      const displayPaths = [entry.displayPath, ...duplicate.siblingDisplayPaths];
+      const label = config.labelOf(entry);
+
+      if (duplicate.conflicting && config.conflictCode) {
+        findings.push({
+          id: `${config.conflictCode}:${duplicate.key}`,
+          code: config.conflictCode,
+          severity: 'warning',
+          title: `${label} is defined differently in the same place`,
+          detail: `${fileIds.length} files declare ${label} for the same tool and scope, with different content: ${displayPaths.join(', ')}. Which one wins is up to the tool.`,
+          fileIds,
+          displayPaths,
+          remediation: `Keep one ${config.noun} and delete or rename the others.`,
+        });
+      } else {
+        findings.push({
+          id: `${config.duplicateCode}:${duplicate.key}`,
+          code: config.duplicateCode,
+          severity: 'info',
+          title: `${label} is declared in ${fileIds.length} places`,
+          detail: `${displayPaths.join(', ')} all declare ${label}.`,
+          fileIds,
+          displayPaths,
+          remediation:
+            'Expected when several tools need the same thing; consolidating makes future edits easier to keep in sync.',
+        });
+      }
+    }
+
+    if (duplicate.identicalFileIds.length === 0) continue;
+
+    const copyGroup = [entry.fileId, ...duplicate.identicalFileIds].sort();
+    const copyKey = copyGroup.join('+');
+    if (seenCopies.has(copyKey)) continue;
+    seenCopies.add(copyKey);
+
+    const copyPaths = copyGroup.map((id) => byId.get(id)?.displayPath ?? id);
+    findings.push({
+      id: `${config.duplicateCode}:copy:${copyKey}`,
+      code: config.duplicateCode,
+      severity: 'info',
+      title: `${copyGroup.length} ${config.noun}s have identical content`,
+      detail: `${copyPaths.join(', ')} are byte-for-byte the same file under different names.`,
+      fileIds: copyGroup,
+      displayPaths: copyPaths,
+      remediation:
+        'Usually one document copied for several tools. Edits to one will not reach the others.',
+    });
+  }
+
+  return findings;
+}
+
+/** Counts duplicate and conflicting groups across every entity type. */
+function countDuplicateGroups(
+  mcpServers: readonly McpServerEntry[],
+  ...lists: ReadonlyArray<readonly { duplicate: DuplicateInfo }[]>
+): { duplicated: number; conflicting: number } {
+  let duplicated = mcpServers.filter((server) => server.duplicated).length;
+  let conflicting = mcpServers.filter((server) => server.conflicting).length;
+
+  for (const list of lists) {
+    const seen = new Set<string>();
+    for (const entry of list) {
+      if (!entry.duplicate.duplicated || seen.has(entry.duplicate.key)) continue;
+      seen.add(entry.duplicate.key);
+      duplicated += 1;
+      if (entry.duplicate.conflicting) conflicting += 1;
+    }
+  }
+
+  return { duplicated, conflicting };
 }
 
 /* ------------------------------------------------------------------ MCP -- */
@@ -538,8 +849,11 @@ function buildDefinition(
     fileId: file.id,
     filePath: file.path,
     displayPath: file.displayPath,
+    directory: file.directory,
+    fileName: file.name,
     providerId: file.providerId,
     providerName: file.providerName,
+    locationLabel: file.locationLabel,
     scope: file.scope,
     ...(projectPath !== undefined
       ? { projectRoot: projectPath }
@@ -681,11 +995,13 @@ function buildMcpEntries(definitions: Map<string, McpDefinition[]>): McpServerEn
 
   for (const [name, defs] of definitions) {
     const providerIds = [...new Set(defs.map((d) => d.providerId))].sort();
+    const directories = [...new Set(defs.map((d) => d.directory))].sort();
     const signatures = new Set(defs.map((d) => d.signature));
     entries.push({
       name,
       definitions: defs,
       providerIds,
+      directories,
       conflicting: signatures.size > 1,
       duplicated: defs.length > 1,
     });
@@ -747,7 +1063,7 @@ function buildInstruction(
   text: string,
   frontmatter: Record<string, unknown> | undefined,
   body: string,
-): InstructionEntry {
+): InstructionDraft {
   const description = frontmatter
     ? firstString(frontmatter, ['description', 'summary'])
     : undefined;
@@ -756,11 +1072,7 @@ function buildInstruction(
     : undefined;
 
   return {
-    fileId: file.id,
-    displayPath: file.displayPath,
-    providerId: file.providerId,
-    providerName: file.providerName,
-    scope: file.scope,
+    ...provenanceOf(file),
     ...(file.projectRoot !== undefined ? { projectRoot: file.projectRoot } : {}),
     title: instructionTitle(file, frontmatter, body),
     ...(description !== undefined ? { description } : {}),
@@ -768,6 +1080,21 @@ function buildInstruction(
     bytes: file.size,
     lineCount: countLines(text),
     precedence: precedenceOf(file.scope),
+  };
+}
+
+/** The provenance every synthesized entry carries, in one place. */
+function provenanceOf(file: DiscoveredFile): EntryProvenance {
+  return {
+    fileId: file.id,
+    filePath: file.path,
+    displayPath: file.displayPath,
+    directory: file.directory,
+    fileName: file.name,
+    providerId: file.providerId,
+    providerName: file.providerName,
+    locationLabel: file.locationLabel,
+    scope: file.scope,
   };
 }
 
@@ -810,7 +1137,7 @@ function buildCapability(
   file: DiscoveredFile,
   frontmatter: Record<string, unknown> | undefined,
   body: string,
-): CapabilityEntry {
+): CapabilityDraft {
   const declaredName = frontmatter ? firstString(frontmatter, ['name', 'title']) : undefined;
   const description = frontmatter
     ? firstString(frontmatter, ['description', 'summary'])
@@ -819,11 +1146,8 @@ function buildCapability(
   const tools = frontmatter ? toolList(frontmatter['tools']) : [];
 
   return {
-    fileId: file.id,
-    displayPath: file.displayPath,
-    providerId: file.providerId,
-    providerName: file.providerName,
-    scope: file.scope,
+    ...provenanceOf(file),
+    ...(file.projectRoot !== undefined ? { projectRoot: file.projectRoot } : {}),
     kind: file.kind as CapabilityEntry['kind'],
     name: declaredName ?? capabilityNameFromFile(file.name) ?? headingOf(body) ?? file.name,
     ...(description !== undefined ? { description } : {}),
@@ -872,7 +1196,7 @@ function buildGuardrail(
   file: DiscoveredFile,
   value: unknown,
   text: string,
-): GuardrailEntry | undefined {
+): GuardrailDraft | undefined {
   if (file.kind === 'ignore') {
     const patterns = text
       .split(/\r?\n/)
@@ -880,11 +1204,8 @@ function buildGuardrail(
       .filter((line) => line.length > 0 && !line.startsWith('#'));
     if (patterns.length === 0) return undefined;
     return {
-      fileId: file.id,
-      displayPath: file.displayPath,
-      providerId: file.providerId,
-      providerName: file.providerName,
-      scope: file.scope,
+      ...provenanceOf(file),
+      ...(file.projectRoot !== undefined ? { projectRoot: file.projectRoot } : {}),
       kind: 'ignore',
       allow: [],
       deny: [],
@@ -908,11 +1229,8 @@ function buildGuardrail(
   }
 
   return {
-    fileId: file.id,
-    displayPath: file.displayPath,
-    providerId: file.providerId,
-    providerName: file.providerName,
-    scope: file.scope,
+    ...provenanceOf(file),
+    ...(file.projectRoot !== undefined ? { projectRoot: file.projectRoot } : {}),
     kind: file.kind,
     allow,
     deny,

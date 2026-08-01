@@ -22,6 +22,14 @@ export interface DiscoveredFile {
   readonly path: string;
   /** Path with the home directory abbreviated to `~`. */
   readonly displayPath: string;
+  /**
+   * The containing folder, with the home directory abbreviated to `~`.
+   *
+   * Carried on every file because "which directory is this coming from?" is
+   * the question the whole product exists to answer, and deriving it in each
+   * view would mean each view guessing at the platform's separator.
+   */
+  readonly directory: string;
   /** File name only. */
   readonly name: string;
   readonly providerId: string;
@@ -351,6 +359,7 @@ async function collectFile(
       id: fileId(path),
       path,
       displayPath: toDisplayPath(path, environment),
+      directory: toDisplayPath(dirname(path), environment),
       name: basename(path),
       providerId: provider.id,
       providerName: provider.name,
@@ -530,6 +539,7 @@ async function sweepProject(
         id: fileId(path),
         path,
         displayPath: toDisplayPath(path, environment),
+        directory: toDisplayPath(dirname(path), environment),
         name,
         providerId: 'unattributed',
         providerName: 'Unattributed',

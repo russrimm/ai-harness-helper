@@ -335,3 +335,71 @@ describe('export', () => {
     expect(json).toContain('mcp.example.com');
   });
 });
+
+describe('sources', () => {
+  it('describes every supported tool, whether or not it was found', async () => {
+    const sources = await service().getSources();
+    const claude = sources.providers.find((provider) => provider.providerId === 'claude-code');
+
+    expect(sources.providers.length).toBeGreaterThan(5);
+    expect(claude?.detected).toBe(true);
+    expect(claude?.fileCount).toBeGreaterThan(0);
+    expect(sources.providers.some((provider) => !provider.detected)).toBe(true);
+    expect(sources.totals.detectedProviders).toBeLessThanOrEqual(sources.totals.providers);
+  });
+
+  it('resolves the directory of every location that holds a file', async () => {
+    const sources = await service().getSources();
+    const active = sources.providers
+      .flatMap((provider) => provider.locations)
+      .filter((location) => location.status === 'active');
+
+    expect(active.length).toBeGreaterThan(0);
+    for (const location of active) {
+      expect(location.directories.length).toBeGreaterThan(0);
+      expect(location.files.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('explains an empty location by listing the paths it checked', async () => {
+    const sources = await service().getSources();
+    const absent = sources.providers
+      .flatMap((provider) => provider.locations)
+      .filter((location) => location.status === 'absent');
+
+    expect(absent.length).toBeGreaterThan(0);
+    // Every absent location is explainable: either the exact paths that were
+    // probed, or the templates for a scope that has no root registered.
+    for (const location of absent) {
+      expect(location.checkedPaths.length + location.templates.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('accounts for every scanned file exactly once', async () => {
+    const harness = service();
+    const scanned = await harness.getScan();
+    const sources = await harness.getSources();
+    const listed = sources.providers.flatMap((provider) =>
+      provider.locations.flatMap((location) => location.files.map((file) => file.fileId)),
+    );
+
+    expect(new Set(listed).size).toBe(listed.length);
+    expect(listed.sort()).toEqual(scanned.files.map((file) => file.id).sort());
+  });
+
+  it('keeps a swept-up file visible under a synthesized provider', async () => {
+    fixture.writeProject('tools/mcp.json', JSON.stringify({ mcpServers: {} }));
+
+    const sources = await service().getSources();
+    const stray = sources.providers.find((provider) => provider.providerId === 'unattributed');
+
+    expect(stray?.detected).toBe(true);
+    expect(stray?.locations[0]?.files.length).toBeGreaterThan(0);
+  });
+
+  it('never exposes the contents of a credential store', async () => {
+    const sources = await service().getSources();
+
+    expect(JSON.stringify(sources)).not.toContain('sk-ant-secret');
+  });
+});

@@ -289,6 +289,9 @@ function FileDetailPanel({
         <div>
           <h2>{file.name}</h2>
           <p className="muted file-path">{file.displayPath}</p>
+          <p className="muted small file-directory">
+            Directory: <code>{file.directory}</code> &middot; {file.locationLabel}
+          </p>
         </div>
         <div className="file-detail-badges">
           <Badge variant={scopeVariant(file.scope)}>{SCOPE_LABELS[file.scope]}</Badge>

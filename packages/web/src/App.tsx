@@ -12,8 +12,9 @@ import { InstructionsView } from './views/InstructionsView.js';
 import { McpView } from './views/McpView.js';
 import { OverviewView } from './views/OverviewView.js';
 import { SearchView } from './views/SearchView.js';
+import { SourcesView } from './views/SourcesView.js';
 
-const KNOWN_BASES = ['/', '/files', '/mcp', '/instructions', '/search', '/export'];
+const KNOWN_BASES = ['/', '/sources', '/files', '/mcp', '/instructions', '/search', '/export'];
 
 export function App(): ReactElement {
   const location = useHashLocation();
@@ -43,6 +44,7 @@ export function App(): ReactElement {
       <main id="main-content">
         {/* Keyed by route so navigating away clears a failed view. */}
         <ViewErrorBoundary key={base}>
+          {base === '/sources' ? <SourcesView /> : null}
           {base === '/files' ? <FilesView initialFileId={rest} /> : null}
           {base === '/mcp' ? <McpView /> : null}
           {base === '/instructions' ? <InstructionsView /> : null}

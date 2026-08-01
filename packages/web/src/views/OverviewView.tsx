@@ -118,7 +118,18 @@ export function OverviewView(): ReactElement {
         <div className="stat-grid">
           <StatCard label="Tools detected" value={data.summary.providerCount} />
           <StatCard label="Config files" value={data.summary.fileCount} />
+          <StatCard label="Directories" value={data.summary.directoryCount} />
           <StatCard label="MCP servers" value={data.summary.mcpServerCount} />
+          <StatCard
+            label="Duplicates"
+            value={data.summary.duplicateCount}
+            {...(data.summary.duplicateCount > 0 ? { tone: 'warning' as const } : {})}
+          />
+          <StatCard
+            label="Conflicts"
+            value={data.summary.conflictCount}
+            {...(data.summary.conflictCount > 0 ? { tone: 'error' as const } : {})}
+          />
           <StatCard
             label="Findings"
             value={data.summary.findingCount}
@@ -134,7 +145,10 @@ export function OverviewView(): ReactElement {
         <p className="muted">
           Scanned {new Date(data.scannedAt).toLocaleString()} on {data.platform} in{' '}
           {data.durationMs} ms.
-          {data.missingCount > 0 ? ` ${data.missingCount} known locations were not present.` : ''}
+          {data.missingCount > 0
+            ? ` ${data.missingCount} known locations were not present.`
+            : ''}{' '}
+          <a href="#/sources">See where every setting comes from</a>.
         </p>
       </section>
 
