@@ -16,11 +16,12 @@
  */
 
 import { createHash, randomBytes } from 'node:crypto';
-import { copyFile, lstat, mkdir, open, readFile, rename, unlink } from 'node:fs/promises';
+import { lstat, mkdir, open, rename, unlink } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 
 import { parseContent } from './parsers.js';
+import { readRegularFile } from './safe-file.js';
 import type { FileFormat, Sensitivity } from './types.js';
 
 /** Why a write was refused. */
@@ -82,6 +83,7 @@ export interface WriterOptions {
 
 /** Formats a strict parser must accept before the file is written. */
 const VALIDATED_FORMATS = new Set<FileFormat>(['json', 'jsonc', 'toml', 'yaml']);
+const MAX_WRITABLE_FILE_BYTES = 8 * 1024 * 1024;
 
 /** SHA-256 of a string, matching the scanner's file hashes. */
 export function hashContent(content: string): string {
@@ -150,6 +152,7 @@ export async function writeConfigFile(
   }
 
   let existing: string | undefined;
+  let existingBytes: Buffer | undefined;
   let existingMode: number | undefined;
   try {
     const stats = await lstat(request.path);
@@ -162,7 +165,8 @@ export async function writeConfigFile(
       };
     }
     existingMode = stats.mode;
-    existing = await readFile(request.path, 'utf8');
+    existingBytes = await readRegularFile(request.path, MAX_WRITABLE_FILE_BYTES);
+    existing = existingBytes.toString('utf8');
   } catch (error) {
     if (!isNotFound(error)) {
       return {
@@ -208,7 +212,13 @@ export async function writeConfigFile(
   let backupPath = '';
   if (existing !== undefined) {
     try {
-      backupPath = await createBackup(request.path, backupRoot, now);
+      backupPath = await createBackup(
+        request.path,
+        backupRoot,
+        now,
+        existingBytes ?? Buffer.from(existing),
+        existingMode,
+      );
     } catch (error) {
       return {
         ok: false,
@@ -244,7 +254,13 @@ export async function writeConfigFile(
  * together, and the original file name is preserved so it is obvious what a
  * backup restores to.
  */
-async function createBackup(path: string, backupRoot: string, now: Date): Promise<string> {
+async function createBackup(
+  path: string,
+  backupRoot: string,
+  now: Date,
+  content: Buffer,
+  mode?: number,
+): Promise<string> {
   const stamp = now.toISOString().replace(/[:.]/g, '-');
   const directory = join(backupRoot, stamp);
   await mkdir(directory, { recursive: true });
@@ -253,7 +269,13 @@ async function createBackup(path: string, backupRoot: string, now: Date): Promis
   // so a short path digest keeps them distinct without deep directory trees.
   const discriminator = createHash('sha256').update(path).digest('hex').slice(0, 8);
   const target = join(directory, `${discriminator}-${basename(path)}`);
-  await copyFile(path, target);
+  const handle = await open(target, 'wx', mode === undefined ? 0o600 : mode & 0o777);
+  try {
+    await handle.writeFile(content);
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
   return target;
 }
 

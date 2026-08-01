@@ -1,4 +1,11 @@
-import { readFileSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
+import {
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  symlinkSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { HarnessService } from '../src/service.js';
@@ -47,6 +54,18 @@ describe('scanning and inventory', () => {
     const tree = await service().getTree();
     expect(tree.length).toBeGreaterThan(0);
     expect(tree.every((group) => group.files.length > 0)).toBe(true);
+  });
+
+  it('does not publish state from a cancelled refresh', async () => {
+    const harness = service();
+    const initial = await harness.getScan();
+    const added = fixture.write('.codex/mcp.json', samples.claudeMcp);
+    const controller = new AbortController();
+    controller.abort();
+
+    await expect(harness.refresh(controller.signal)).rejects.toMatchObject({ name: 'AbortError' });
+    expect(await harness.getScan()).toBe(initial);
+    expect(harness.isAuthorized(added)).toBe(false);
   });
 });
 
@@ -180,7 +199,7 @@ describe('documents', () => {
   });
 
   it.skipIf(process.platform === 'win32')(
-    'refuses a file replaced by a symlink after scanning',
+    'refuses a file replaced by a symlink after scanning (Windows requires symlink privilege)',
     async () => {
       const harness = service();
       const id = await findId(harness, '.claude/settings.json');
@@ -194,6 +213,27 @@ describe('documents', () => {
       expect(document?.issues[0]?.message).toMatch(/regular file|symbolic/i);
     },
   );
+
+  it('refuses a file moved behind a directory junction after scanning', async () => {
+    const harness = service();
+    const id = await findId(harness, '.claude/settings.json');
+    const originalDirectory = `${fixture.home}/.claude`;
+    const preservedDirectory = `${fixture.home}/.claude-original`;
+    const outsideDirectory = `${fixture.root}/outside-claude`;
+    mkdirSync(outsideDirectory, { recursive: true });
+    writeFileSync(
+      `${outsideDirectory}/settings.json`,
+      '{"password":"synthetic-outside-value"}',
+      'utf8',
+    );
+    renameSync(originalDirectory, preservedDirectory);
+    symlinkSync(outsideDirectory, originalDirectory, 'junction');
+
+    const document = await harness.getDocument(id);
+
+    expect(document?.content).toBe('');
+    expect(document?.issues[0]?.message).toMatch(/symbolic link|junction/i);
+  });
 
   it('bounds a file that grows after scanning', async () => {
     const harness = service();

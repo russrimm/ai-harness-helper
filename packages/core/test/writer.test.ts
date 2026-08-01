@@ -1,4 +1,11 @@
-import { readFileSync, existsSync, mkdirSync, symlinkSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
@@ -154,11 +161,42 @@ describe('writeConfigFile - refusals', () => {
     expect(readFileSync(path, 'utf8')).toBe(VALID);
   });
 
-  it.skipIf(process.platform === 'win32')('refuses to write through a symbolic link', async () => {
-    const outside = fixture.write('outside.json', VALID);
-    const path = join(fixture.home, '.cursor', 'mcp.json');
-    mkdirSync(join(fixture.home, '.cursor'), { recursive: true });
-    symlinkSync(outside, path);
+  it.skipIf(process.platform === 'win32')(
+    'refuses to write through a file symlink (Windows requires symlink privilege)',
+    async () => {
+      const outside = fixture.write('outside.json', VALID);
+      const path = join(fixture.home, '.cursor', 'mcp.json');
+      mkdirSync(join(fixture.home, '.cursor'), { recursive: true });
+      symlinkSync(outside, path);
+
+      const result = await writeConfigFile(
+        {
+          path,
+          content: '{}',
+          format: 'json',
+          sensitivity: 'normal',
+          expectedHash: hashContent(VALID),
+        },
+        { backupRoot },
+      );
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.code).toBe('write-failed');
+      expect(readFileSync(outside, 'utf8')).toBe(VALID);
+    },
+  );
+
+  it('refuses to write through a directory junction', async () => {
+    const linkedDirectory = join(fixture.home, '.cursor');
+    const originalDirectory = join(fixture.home, '.cursor-original');
+    const outsideDirectory = join(fixture.root, 'outside-cursor');
+    const path = join(linkedDirectory, 'mcp.json');
+    mkdirSync(linkedDirectory, { recursive: true });
+    writeFileSync(path, VALID);
+    mkdirSync(outsideDirectory, { recursive: true });
+    writeFileSync(join(outsideDirectory, 'mcp.json'), VALID);
+    renameSync(linkedDirectory, originalDirectory);
+    symlinkSync(outsideDirectory, linkedDirectory, 'junction');
 
     const result = await writeConfigFile(
       {
@@ -172,8 +210,11 @@ describe('writeConfigFile - refusals', () => {
     );
 
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.code).toBe('write-failed');
-    expect(readFileSync(outside, 'utf8')).toBe(VALID);
+    if (!result.ok) {
+      expect(result.code).toBe('write-failed');
+      expect(result.message).toMatch(/symbolic link|junction/i);
+    }
+    expect(readFileSync(join(outsideDirectory, 'mcp.json'), 'utf8')).toBe(VALID);
   });
 });
 

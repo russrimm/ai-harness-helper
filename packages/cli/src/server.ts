@@ -121,9 +121,16 @@ export async function createServer(options: ServerOptions): Promise<HarnessServe
     return { ...result, tree: await service.getTree() };
   });
 
-  app.post('/api/scan', async () => {
-    const result = await service.refresh();
-    return { ...result, tree: await service.getTree() };
+  app.post('/api/scan', async (request) => {
+    const controller = new AbortController();
+    const abort = (): void => controller.abort();
+    request.raw.once('aborted', abort);
+    try {
+      const result = await service.refresh(controller.signal);
+      return { ...result, tree: await service.getTree() };
+    } finally {
+      request.raw.off('aborted', abort);
+    }
   });
 
   app.get('/api/inventory', async () => service.getInventory());

@@ -188,6 +188,8 @@ export type ContentLoader = (file: DiscoveredFile) => Promise<string | undefined
 export interface AggregateOptions {
   /** Overrides the default `fs.readFile` loader. */
   readonly loadContent?: ContentLoader;
+  /** Maximum file reads in flight while preserving deterministic processing. */
+  readonly concurrency?: number;
 }
 
 /** Formats a tool parses strictly, where any syntax error breaks the file. */
@@ -228,6 +230,7 @@ export async function aggregate(
   options: AggregateOptions = {},
 ): Promise<HarnessInventory> {
   const load = options.loadContent ?? defaultLoader;
+  const concurrency = Math.max(1, options.concurrency ?? 16);
 
   const mcpDefinitions = new Map<string, McpDefinition[]>();
   const instructions: InstructionEntry[] = [];
@@ -236,8 +239,22 @@ export async function aggregate(
   const findings: HealthFinding[] = [];
   const parsedFileIds: string[] = [];
 
-  for (const file of scan.files) {
+  const pendingLoads = new Map<number, Promise<string | undefined>>();
+  const scheduleLoad = (index: number): void => {
+    const file = scan.files[index];
+    if (!file || file.sensitivity === 'credential-store' || file.hash === '') return;
+    pendingLoads.set(index, load(file));
+  };
+  for (let index = 0; index < Math.min(concurrency, scan.files.length); index += 1) {
+    scheduleLoad(index);
+  }
+
+  for (const [index, file] of scan.files.entries()) {
+    const textPromise = pendingLoads.get(index);
+    pendingLoads.delete(index);
+
     if (file.sensitivity === 'credential-store') {
+      scheduleLoad(index + concurrency);
       findings.push({
         id: `credential-store:${file.id}`,
         code: 'credential-store',
@@ -263,9 +280,13 @@ export async function aggregate(
       });
     }
 
-    if (file.hash === '') continue;
+    if (file.hash === '') {
+      scheduleLoad(index + concurrency);
+      continue;
+    }
 
-    const text = await load(file);
+    const text = await textPromise;
+    scheduleLoad(index + concurrency);
     if (text === undefined) continue;
 
     if (text.trim().length === 0) {

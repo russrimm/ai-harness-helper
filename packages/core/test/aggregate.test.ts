@@ -517,6 +517,31 @@ describe('aggregate - health findings', () => {
 });
 
 describe('aggregate - credential stores', () => {
+  it('bounds concurrent content loads', async () => {
+    fixture.write('.claude/settings.json', '{}');
+    fixture.write('.cursor/mcp.json', '{}');
+    fixture.write('.mcp.json', '{}');
+    const scanned = await scan({ environment: fixture.environment });
+    let active = 0;
+    let maximum = 0;
+    let loaded = 0;
+
+    await aggregate(scanned, {
+      concurrency: 2,
+      loadContent: async () => {
+        active += 1;
+        loaded += 1;
+        maximum = Math.max(maximum, active);
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        active -= 1;
+        return '{}';
+      },
+    });
+
+    expect(loaded).toBeGreaterThanOrEqual(3);
+    expect(maximum).toBe(2);
+  });
+
   it('reports a credential store without reading it', async () => {
     fixture.write(
       '.codex/auth.json',

@@ -295,7 +295,7 @@ describe('scan - resilience', () => {
   });
 
   it.skipIf(process.platform === 'win32')(
-    'does not follow a directly configured symlink',
+    'does not follow a directly configured file symlink (Windows requires symlink privilege)',
     async () => {
       const outside = fixture.write('outside.json', samples.claudeSettings);
       const target = join(fixture.home, '.claude', 'settings.json');
@@ -306,6 +306,19 @@ describe('scan - resilience', () => {
       expect(result.files.some((file) => file.path === target)).toBe(false);
     },
   );
+
+  it('does not follow a configured file through a directory junction', async () => {
+    const outside = join(fixture.root, 'outside-claude');
+    mkdirSync(outside, { recursive: true });
+    writeFileSync(join(outside, 'settings.json'), samples.claudeSettings);
+    symlinkSync(outside, join(fixture.home, '.claude'), 'junction');
+
+    const result = await scan({ environment: fixture.environment });
+    const target = join(fixture.home, '.claude', 'settings.json');
+
+    expect(result.files.some((file) => file.path === target)).toBe(false);
+    expect(result.problems.some((problem) => problem.path === target)).toBe(true);
+  });
 
   it.skipIf(process.platform === 'win32')(
     'reports an unreadable directory as a problem and keeps scanning',

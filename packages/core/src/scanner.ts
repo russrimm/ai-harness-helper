@@ -1,10 +1,12 @@
 import { createHash } from 'node:crypto';
-import { lstat, open } from 'node:fs/promises';
+import { lstat } from 'node:fs/promises';
 import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import { glob } from 'tinyglobby';
+import { runBounded } from './bounded.js';
 import { expandTemplates, toDisplayPath } from './paths.js';
 import { editorLanguage, inferFormat } from './parsers.js';
 import { allLocations, providersById } from './registry.js';
+import { readRegularFile } from './safe-file.js';
 import type {
   ConfigScope,
   FileFormat,
@@ -153,20 +155,8 @@ function fileId(path: string): string {
 /** Hashes file content so writes can detect external modification. */
 async function hashFile(path: string, size: number, maxBytes: number): Promise<string> {
   if (size > maxBytes) return '';
-  const handle = await open(path, 'r');
-  try {
-    const content = Buffer.allocUnsafe(Math.min(maxBytes + 1, size + 1));
-    let offset = 0;
-    while (offset < content.length) {
-      const { bytesRead } = await handle.read(content, offset, content.length - offset, offset);
-      if (bytesRead === 0) break;
-      offset += bytesRead;
-    }
-    if (offset > size || offset > maxBytes) return '';
-    return createHash('sha256').update(content.subarray(0, offset)).digest('hex');
-  } finally {
-    await handle.close();
-  }
+  const content = await readRegularFile(path, maxBytes);
+  return createHash('sha256').update(content).digest('hex');
 }
 
 function classifyError(error: unknown): ScanProblem['code'] {
@@ -249,6 +239,8 @@ export async function scan(options: ScanOptions): Promise<ScanResult> {
           files,
           problems,
           claimed,
+          concurrency,
+          options.signal,
         ),
     ),
     concurrency,
@@ -521,6 +513,8 @@ async function sweepProject(
   files: DiscoveredFile[],
   problems: ScanProblem[],
   claimed: Set<string>,
+  concurrency: number,
+  signal?: AbortSignal,
 ): Promise<void> {
   let matches: string[];
   try {
@@ -538,43 +532,47 @@ async function sweepProject(
     return;
   }
 
+  const sweepTasks: Array<() => Promise<void>> = [];
   for (const match of matches) {
     const path = environment.platform === 'win32' ? match.replace(/\//g, sep) : match;
     const key = claimKey(path, environment);
     if (claimed.has(key)) continue;
+    claimed.add(key);
 
-    try {
-      const stats = await lstat(path);
-      if (stats.isSymbolicLink() || !stats.isFile()) continue;
-      const hash = await hashFile(path, stats.size, maxFileBytes);
-      const name = basename(path);
+    sweepTasks.push(async () => {
+      try {
+        const stats = await lstat(path);
+        if (stats.isSymbolicLink() || !stats.isFile()) return;
+        const hash = await hashFile(path, stats.size, maxFileBytes);
+        const name = basename(path);
 
-      claimed.add(key);
-      files.push({
-        id: fileId(path),
-        path,
-        displayPath: toDisplayPath(path, environment),
-        name,
-        providerId: 'unattributed',
-        providerName: 'Unattributed',
-        locationId: 'sweep',
-        locationLabel: `Found under ${relative(root, dirname(path)) || '.'}`,
-        scope: 'project',
-        kind: name.toLowerCase().includes('mcp') ? 'mcp' : 'instructions',
-        format: inferFormat(name),
-        sensitivity: name.toLowerCase().includes('mcp') ? 'contains-secrets' : 'normal',
-        size: stats.size,
-        modified: stats.mtime.toISOString(),
-        hash,
-        projectRoot: root,
-        note: 'No provider claims this path. It may be read by a tool that is not in the registry.',
-        unattributed: true,
-      });
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue;
-      problems.push({ path, message: errorMessage(error), code: classifyError(error) });
-    }
+        files.push({
+          id: fileId(path),
+          path,
+          displayPath: toDisplayPath(path, environment),
+          name,
+          providerId: 'unattributed',
+          providerName: 'Unattributed',
+          locationId: 'sweep',
+          locationLabel: `Found under ${relative(root, dirname(path)) || '.'}`,
+          scope: 'project',
+          kind: name.toLowerCase().includes('mcp') ? 'mcp' : 'instructions',
+          format: inferFormat(name),
+          sensitivity: name.toLowerCase().includes('mcp') ? 'contains-secrets' : 'normal',
+          size: stats.size,
+          modified: stats.mtime.toISOString(),
+          hash,
+          projectRoot: root,
+          note: 'No provider claims this path. It may be read by a tool that is not in the registry.',
+          unattributed: true,
+        });
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') return;
+        problems.push({ path, message: errorMessage(error), code: classifyError(error) });
+      }
+    });
   }
+  await runBounded(sweepTasks, concurrency, signal);
 }
 
 /** Windows paths are compared case-insensitively when deduplicating. */
@@ -617,24 +615,4 @@ function providerOrder(providerId: string): number {
 /** Absolute path to a file inside a project root, used by tests and the API. */
 export function projectFile(root: string, ...segments: string[]): string {
   return join(root, ...segments);
-}
-
-async function runBounded(
-  tasks: readonly (() => Promise<void>)[],
-  concurrency: number,
-  signal?: AbortSignal,
-): Promise<void> {
-  let next = 0;
-  const worker = async (): Promise<void> => {
-    while (next < tasks.length) {
-      signal?.throwIfAborted();
-      const task = tasks[next];
-      next += 1;
-      await task?.();
-    }
-  };
-  await Promise.all(
-    Array.from({ length: Math.min(concurrency, tasks.length) }, async () => worker()),
-  );
-  signal?.throwIfAborted();
 }

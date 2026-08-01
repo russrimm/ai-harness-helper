@@ -104,13 +104,17 @@ export class HarnessService {
   }
 
   /** Re-reads the filesystem and recomputes the inventory. */
-  async refresh(): Promise<ScanResult> {
+  async refresh(signal?: AbortSignal): Promise<ScanResult> {
     const result = await scan({
       environment: this.#environment,
       projectRoots: this.#projectRoots,
+      signal,
     });
+    signal?.throwIfAborted();
+    const inventory = await aggregate(result);
+    signal?.throwIfAborted();
     this.#scan = result;
-    this.#inventory = await aggregate(result);
+    this.#inventory = inventory;
     this.#authorized = new Set(result.files.map((file) => normalizeKey(file.path)));
     return result;
   }
