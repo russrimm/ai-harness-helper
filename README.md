@@ -33,7 +33,8 @@ there is no telemetry, and the tool makes no outbound network requests at all.
   copilot-instructions, `.cursorrules` and friends in precedence order, plus
   your agents, skills, prompts, chat modes, and commands.
 - **Search** — full-text across everything discovered, honoring redaction.
-- **Export** — the whole harness as JSON or a Markdown report.
+- **Export** — the whole harness as JSON or a Markdown report. Metadata only,
+  with credentials masked, so it is safe to attach to a bug report.
 
 You can also **edit** any config file in place, with backups, validation, and
 conflict detection.
@@ -110,6 +111,9 @@ first-class design constraint rather than an afterthought.
   present, with metadata only. Editing them is blocked outright.
 - Search redacts before matching, so a query cannot be used to confirm a
   secret character by character.
+- Credentials passed on an MCP command line — `--api-key`, `-e TOKEN=...`, or
+  an `?api_key=` query string — are masked in the inventory and in exports, not
+  just the ones declared under `env`.
 - File contents are never logged. There is no telemetry.
 
 See [SECURITY.md](SECURITY.md) for the full threat model.
