@@ -75,6 +75,20 @@ describe('redactDocumentText', () => {
     expect(redactDocumentText(source).value).toBe(source);
   });
 
+  it('does not mask a literal that cannot be a credential', () => {
+    // VS Code writes `"password": true` to mark a prompt input as masked.
+    const source = [
+      '"password": true,',
+      '"secret": false',
+      '"apiKey": null',
+      '"token": 4096',
+      '"key": -1.5',
+    ].join('\n');
+    const { value, redactions } = redactDocumentText(source);
+    expect(value).toBe(source);
+    expect(redactions).toEqual([]);
+  });
+
   it('masks bare credentials on non-assignment lines', () => {
     const source = 'Use this key: sk-ant-api03-abcdefghijklmnopqrstuvwxyz012345 when calling.';
     const { value, redactions } = redactDocumentText(source);
@@ -105,6 +119,24 @@ describe('redactDocumentText', () => {
     );
     expect(first.redactions[0]?.path).toContain('apiKey');
     expect(first.redactions[0]?.length).toBe('aaaaaaaaaaaaaaaa'.length);
+  });
+
+  it('names the key for a secret inside an inline object', () => {
+    const source = '  "env": { "SCRATCH_TOKEN": "sk-live-shouldbemasked123" }';
+    const { value, redactions } = redactDocumentText(source);
+
+    expect(value).not.toContain('shouldbemasked123');
+    expect(redactions).toHaveLength(1);
+    expect(redactions[0]?.path).toBe('SCRATCH_TOKEN@1');
+  });
+
+  it('distinguishes two secrets sharing one line', () => {
+    const source =
+      '{ "clientSecret": "sk-live-firstsecret0001", "apiKey": "sk-live-secondsecret0002" }';
+    const { redactions } = redactDocumentText(source);
+
+    expect(redactions).toHaveLength(2);
+    expect(redactions.map((entry) => entry.path)).toEqual(['clientSecret@1', 'apiKey@1']);
   });
 
   it('masks every string inside an env block', () => {

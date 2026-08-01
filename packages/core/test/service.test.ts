@@ -300,4 +300,38 @@ describe('export', () => {
     expect(markdown).toContain('## MCP servers');
     expect(markdown).not.toContain('sk-ant-api03-abcdefghij');
   });
+
+  it('keeps inline credentials out of both export formats', async () => {
+    // The Export view promises the download is safe to attach to a bug report,
+    // so every place a secret can hide in an MCP definition is checked here.
+    fixture.write(
+      '.mcp.json',
+      JSON.stringify({
+        mcpServers: {
+          viaFlag: { command: 'npx', args: ['srv', '--api-key', 'sk-live-flagsecret012345'] },
+          viaEquals: { command: 'docker', args: ['run', '-e', 'TOKEN=ghp_equalssecret012345'] },
+          viaUrl: { type: 'http', url: 'https://mcp.example.com/?api_key=sk-live-urlsecret01234' },
+          viaEnv: { command: 'npx', env: { API_KEY: 'sk-live-envsecret012345' } },
+        },
+      }),
+    );
+
+    const svc = service();
+    const json = JSON.stringify(await svc.exportJson());
+    const markdown = await svc.exportMarkdown();
+
+    for (const secret of [
+      'sk-live-flagsecret012345',
+      'ghp_equalssecret012345',
+      'sk-live-urlsecret01234',
+      'sk-live-envsecret012345',
+    ]) {
+      expect(json).not.toContain(secret);
+      expect(markdown).not.toContain(secret);
+    }
+
+    // Redaction must not cost the report its usefulness.
+    expect(json).toContain('viaUrl');
+    expect(json).toContain('mcp.example.com');
+  });
 });

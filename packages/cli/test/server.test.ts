@@ -1,4 +1,5 @@
-import { readFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { HarnessService } from '@ai-harness-helper/core';
@@ -392,5 +393,68 @@ describe('search and export', () => {
 describe('unknown endpoints', () => {
   it('404s an unknown API route', async () => {
     expect((await call({ url: '/api/nope' })).statusCode).toBe(404);
+  });
+});
+
+describe('serving the built web bundle', () => {
+  // `publicDir` is the branch that turns the API into an actual app, and it is
+  // only reachable when a bundle exists on disk, so it gets its own server.
+  let bundleApp: FastifyInstance;
+  let publicDir: string;
+
+  beforeEach(async () => {
+    publicDir = join(fixture.root, 'public');
+    mkdirSync(join(publicDir, 'assets'), { recursive: true });
+    writeFileSync(join(publicDir, 'index.html'), '<!doctype html><title>AI Harness Helper</title>');
+    writeFileSync(join(publicDir, 'assets', 'app.js'), 'export const ok = true;\n');
+
+    const service = new HarnessService({
+      environment: fixture.environment,
+      writerOptions: { backupRoot: join(fixture.root, 'backups') },
+    });
+    ({ app: bundleApp } = await createServer({ service, token: TOKEN, publicDir }));
+  });
+
+  afterEach(async () => {
+    await bundleApp.close();
+  });
+
+  const get = async (url: string) =>
+    bundleApp.inject({ method: 'GET', url, headers: { host: '127.0.0.1:7777' } });
+
+  it('serves index.html at the root without a token, so the app can boot', async () => {
+    const response = await get('/');
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toContain('AI Harness Helper');
+  });
+
+  it('serves hashed assets', async () => {
+    const response = await get('/assets/app.js');
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toContain('export const ok');
+  });
+
+  it('falls back to the shell for a client-side route', async () => {
+    const response = await get('/files/abc123');
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toContain('AI Harness Helper');
+  });
+
+  it('still 404s unknown API routes rather than returning the shell', async () => {
+    const response = await bundleApp.inject({
+      method: 'GET',
+      url: '/api/nope',
+      headers: { host: '127.0.0.1:7777', 'x-harness-token': TOKEN },
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.body).not.toContain('<!doctype html>');
+  });
+
+  it('does not serve API data to an unauthenticated request just because a bundle exists', async () => {
+    expect((await get('/api/scan')).statusCode).toBe(401);
   });
 });
