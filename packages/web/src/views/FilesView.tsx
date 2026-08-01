@@ -433,6 +433,10 @@ function refusalMessage(outcome: WriteRefusal): string {
       return 'This file changed on disk since it was loaded. Reload to see the latest version before saving again.';
     case 'not-found':
       return 'This file could no longer be found. It may have been moved or deleted.';
+    case 'not-declared':
+      return 'That MCP server is not declared in this file, so there was nothing to remove.';
+    case 'unsupported-format':
+      return outcome.message;
     case 'write-failed':
       return outcome.message;
   }

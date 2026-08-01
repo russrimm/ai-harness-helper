@@ -173,6 +173,36 @@ export interface McpServerEntry {
   duplicated: boolean;
 }
 
+export type McpOverlapKind =
+  'same-target' | 'same-package' | 'same-endpoint' | 'same-host' | 'shared-domain';
+
+export type McpOverlapConfidence = 'high' | 'medium' | 'low';
+
+export interface McpOverlapMember {
+  serverName: string;
+  providerIds: string[];
+  providerNames: string[];
+  fileIds: string[];
+  displayPaths: string[];
+  evidence: string;
+  disabled: boolean;
+}
+
+export interface McpOverlapGroup {
+  id: string;
+  kind: McpOverlapKind;
+  confidence: McpOverlapConfidence;
+  label: string;
+  sharedKey: string;
+  title: string;
+  detail: string;
+  remediation: string;
+  serverNames: string[];
+  members: McpOverlapMember[];
+  fileIds: string[];
+  displayPaths: string[];
+}
+
 export interface InstructionEntry extends EntryProvenance {
   projectRoot?: string;
   title: string;
@@ -214,6 +244,7 @@ export type FindingSeverity = 'info' | 'warning' | 'error';
 export type FindingCode =
   | 'mcp-duplicate'
   | 'mcp-conflict'
+  | 'mcp-overlap'
   | 'capability-duplicate'
   | 'capability-conflict'
   | 'instruction-duplicate'
@@ -243,6 +274,7 @@ export interface HarnessSummary {
   fileCount: number;
   mcpServerCount: number;
   mcpDefinitionCount: number;
+  mcpOverlapCount: number;
   instructionCount: number;
   capabilityCount: number;
   guardrailCount: number;
@@ -258,6 +290,7 @@ export interface HarnessSummary {
 export interface HarnessInventory {
   summary: HarnessSummary;
   mcpServers: McpServerEntry[];
+  mcpOverlaps: McpOverlapGroup[];
   instructions: InstructionEntry[];
   capabilities: CapabilityEntry[];
   guardrails: GuardrailEntry[];
@@ -369,6 +402,8 @@ export type WriteRefusalCode =
   | 'invalid-content'
   | 'hash-mismatch'
   | 'not-found'
+  | 'not-declared'
+  | 'unsupported-format'
   | 'write-failed';
 
 export interface WriteRefusal {
@@ -388,6 +423,13 @@ export interface WriteSuccess {
 }
 
 export type WriteOutcome = WriteSuccess | WriteRefusal;
+
+export interface McpRemovalSuccess extends WriteSuccess {
+  serverName: string;
+  removedFrom: string[];
+}
+
+export type McpRemovalOutcome = McpRemovalSuccess | WriteRefusal;
 
 export interface HealthResponse {
   ok: boolean;

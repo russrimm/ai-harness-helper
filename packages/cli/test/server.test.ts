@@ -359,6 +359,70 @@ describe('write routes', () => {
   });
 });
 
+describe('removing an MCP server', () => {
+  it('deletes the server and reports where it was removed from', async () => {
+    const id = await firstFileId('.cursor/mcp.json');
+    const response = await call({ method: 'DELETE', url: `/api/files/${id}/mcp/filesystem` });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json() as { ok: boolean; serverName: string; removedFrom: string[] };
+    expect(body.ok).toBe(true);
+    expect(body.serverName).toBe('filesystem');
+    expect(body.removedFrom).toEqual(['mcpServers']);
+
+    const inventory = (await call({ url: '/api/inventory' })).json() as {
+      mcpServers: { name: string }[];
+    };
+    expect(inventory.mcpServers.map((entry) => entry.name)).not.toContain('filesystem');
+  });
+
+  it('404s a server the file does not declare', async () => {
+    const id = await firstFileId('.cursor/mcp.json');
+    const response = await call({ method: 'DELETE', url: `/api/files/${id}/mcp/absent` });
+
+    expect(response.statusCode).toBe(404);
+    expect((response.json() as { code: string }).code).toBe('not-declared');
+  });
+
+  it('404s an unknown file id', async () => {
+    const response = await call({ method: 'DELETE', url: '/api/files/nope/mcp/github' });
+    expect(response.statusCode).toBe(404);
+  });
+
+  it('409s a stale hash rather than editing the file', async () => {
+    const id = await firstFileId('.cursor/mcp.json');
+    const response = await call({
+      method: 'DELETE',
+      url: `/api/files/${id}/mcp/github`,
+      payload: { expectedHash: 'stale' },
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect((response.json() as { code: string }).code).toBe('hash-mismatch');
+  });
+
+  it('403s in read-only mode', async () => {
+    await app.close();
+    await start({ readOnly: true });
+
+    const id = await firstFileId('.cursor/mcp.json');
+    const response = await call({ method: 'DELETE', url: `/api/files/${id}/mcp/github` });
+
+    expect(response.statusCode).toBe(403);
+    expect((response.json() as { code: string }).code).toBe('read-only');
+  });
+
+  it('requires a token like every other mutating route', async () => {
+    const id = await firstFileId('.cursor/mcp.json');
+    const response = await call({
+      method: 'DELETE',
+      url: `/api/files/${id}/mcp/github`,
+      token: null,
+    });
+    expect(response.statusCode).toBe(401);
+  });
+});
+
 describe('capability routes', () => {
   interface CapabilityListBody {
     capabilities: { fileId: string; name: string; kind: string; model?: string }[];

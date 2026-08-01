@@ -17,6 +17,7 @@ import {
   validateCapabilityDocument,
   type CapabilityDocumentBody,
 } from './capability-doc.js';
+import { removeMcpServerFromText } from './mcp-edit.js';
 import { editorLanguage, parseContent, type ParseIssue } from './parsers.js';
 import { createEnvironment, selectPlatformTemplates, toDisplayPath } from './paths.js';
 import {
@@ -35,7 +36,29 @@ import type {
   ResolverEnvironment,
   Sensitivity,
 } from './types.js';
-import { hashContent, writeConfigFile, type WriteOutcome, type WriterOptions } from './writer.js';
+import {
+  hashContent,
+  writeConfigFile,
+  type WriteOutcome,
+  type WriteRefusal,
+  type WriteSuccess,
+  type WriterOptions,
+} from './writer.js';
+
+/** A successful removal, plus what was taken out and from where. */
+export interface McpRemovalSuccess extends WriteSuccess {
+  readonly serverName: string;
+  /** Dotted paths inside the file the declaration was removed from. */
+  readonly removedFrom: readonly string[];
+}
+
+/**
+ * The result of deleting an MCP server declaration.
+ *
+ * Shares the writer's refusal shape so callers already handling `read-only`
+ * or `hash-mismatch` need no second error vocabulary.
+ */
+export type McpRemovalOutcome = McpRemovalSuccess | WriteRefusal;
 
 /** A file's contents prepared for display or editing. */
 export interface FileDocument {
@@ -696,6 +719,85 @@ export class HarnessService {
     return outcome;
   }
 
+  /**
+   * Deletes one MCP server declaration from one file.
+   *
+   * The removal is computed from the file's *current* contents rather than
+   * from the cached inventory, so a server the user already deleted by hand
+   * reports `not-declared` instead of a bewildering success. Everything after
+   * that is the ordinary write path — validation, backup, hash check, atomic
+   * rename — because a delete is exactly as destructive as an edit.
+   */
+  async removeMcpServer(
+    id: string,
+    serverName: string,
+    expectedHash?: string,
+  ): Promise<McpRemovalOutcome | undefined> {
+    const file = this.findFile(id);
+    if (!file || !this.isAuthorized(file.path)) return undefined;
+
+    if (this.#readOnly) {
+      return {
+        ok: false,
+        code: 'read-only',
+        message: 'This session is read-only. Restart without --read-only to make changes.',
+      };
+    }
+
+    if (file.sensitivity === 'credential-store') {
+      return {
+        ok: false,
+        code: 'credential-store',
+        message:
+          'This file exists to hold credentials and is never editable here. Use the owning tool to change it.',
+      };
+    }
+
+    let text: string;
+    try {
+      text = await readFile(file.path, 'utf8');
+    } catch {
+      return {
+        ok: false,
+        code: 'not-found',
+        message: 'The file no longer exists. Re-scan before editing it.',
+      };
+    }
+
+    const currentHash = hashContent(text);
+    if (expectedHash !== undefined && expectedHash !== currentHash) {
+      return {
+        ok: false,
+        code: 'hash-mismatch',
+        message:
+          'The file changed on disk since you loaded it. Reload to see the current contents, then try again.',
+        currentHash,
+      };
+    }
+
+    const removal = removeMcpServerFromText(text, file.format, serverName, {
+      providerId: file.providerId,
+    });
+    if (!removal.ok) {
+      return { ok: false, code: removal.code, message: removal.message };
+    }
+
+    const outcome = await writeConfigFile(
+      {
+        path: file.path,
+        content: removal.content,
+        format: file.format,
+        sensitivity: file.sensitivity,
+        expectedHash: currentHash,
+      },
+      { ...this.#writerOptions, readOnly: this.#readOnly },
+    );
+
+    if (!outcome.ok) return outcome;
+    await this.refresh();
+    return { ...outcome, serverName, removedFrom: removal.removedFrom };
+  }
+
   /* ------------------------------------------- Structured capability edit -- */
 
   /**
@@ -1012,6 +1114,7 @@ export class HarnessService {
         })),
       })),
       mcpServers: inventory.mcpServers,
+      mcpOverlaps: inventory.mcpOverlaps,
       instructions: inventory.instructions,
       capabilities: inventory.capabilities,
       guardrails: inventory.guardrails,
@@ -1058,6 +1161,19 @@ export class HarnessService {
         lines.push(
           `| ${server.name} | ${server.definitions[0]?.transport ?? 'unknown'} | ` +
             `${server.providerIds.join(', ')} | ${server.directories.join(', ')} | ${status} |`,
+        );
+      }
+      lines.push('');
+    }
+
+    if (inventory.mcpOverlaps.length > 0) {
+      lines.push('## Overlapping MCP servers', '');
+      lines.push('| Servers | Overlap | Confidence | Shared |');
+      lines.push('| --- | --- | --- | --- |');
+      for (const group of inventory.mcpOverlaps) {
+        lines.push(
+          `| ${group.serverNames.join(', ')} | ${group.kind} | ` +
+            `${group.confidence} | ${group.label} |`,
         );
       }
       lines.push('');

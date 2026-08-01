@@ -34,8 +34,9 @@ there is no telemetry, and the tool makes no outbound network requests at all.
 - **Files** — a tree grouped by tool and scope, with a syntax-highlighted
   viewer. Secrets are masked by default; you reveal one value at a time.
 - **MCP servers** — every server from every tool in one table, showing which
-  tools define it, which directories the definitions live in, and where they
-  disagree.
+  tools define it, which directories the definitions live in, where they
+  disagree, and which differently named servers appear to do the same job. Any
+  server can be deleted straight out of the file that declares it.
 - **Instructions, capabilities and guardrails** — CLAUDE.md, AGENTS.md,
   copilot-instructions, `.cursorrules` and friends in precedence order, plus
   your agents, skills, prompts, chat modes, commands, permission rules, hooks
@@ -67,6 +68,39 @@ instruction file, and guardrail — is compared against every other one:
   obvious, so this is raised as a finding.
 - **Identical copy** catches the same file content living under two different
   names — the `CLAUDE.md` you copied to `AGENTS.md` and then edited only one of.
+
+### Overlapping MCP servers
+
+Duplicates only catch one _name_ declared twice. The more expensive problem is
+three separately named servers that all do the same job, each one spending
+context window on tool descriptions the model will never use. The MCP view
+groups servers that appear to overlap, strongest evidence first:
+
+| Evidence             | Confidence | What it means                                    |
+| -------------------- | ---------- | ------------------------------------------------ |
+| Same launch command  | high       | identical normalized command, args included      |
+| Same package         | high       | same npm/PyPI/OCI package behind different names |
+| Same endpoint        | high       | same remote URL, path included                   |
+| Same host            | medium     | same remote host on different paths              |
+| Same capability area | low        | names and packages describing the same domain    |
+
+Nothing is executed and nothing is contacted — the inference comes entirely
+from what the declarations already say. Because that ranges from certain to
+merely suggestive, every group shows its confidence and the exact evidence that
+produced it, and a weaker explanation is suppressed when a stronger one already
+covers the same pair of servers.
+
+### Removing a server
+
+The MCP view can delete a server from the file that declares it, including from
+every file at once when the same name is declared in several. The edit is
+surgical rather than a rewrite: comments, key ordering, and formatting outside
+the removed declaration survive intact, and the containing `mcpServers` map is
+left in place even when it ends up empty, because a missing map and an empty one
+do not mean the same thing to every tool. Removal goes through the same write
+chain as the editor below, so it is refused in `--read-only` mode, backed up
+first, and written atomically. Credentials the server used are left wherever
+they already live — this tool never edits a credential store.
 
 ## Usage
 

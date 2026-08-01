@@ -227,6 +227,89 @@ describe('writing', () => {
   });
 });
 
+describe('removing an MCP server', () => {
+  async function mcpFile(harness: HarnessService): Promise<{ id: string; path: string }> {
+    const result = await harness.getScan();
+    const file = result.files.find((entry) =>
+      entry.path.replace(/\\/g, '/').endsWith('.cursor/mcp.json'),
+    );
+    if (!file) throw new Error('fixture missing mcp.json');
+    return { id: file.id, path: file.path };
+  }
+
+  it('removes one server, backs up the file, and rescans', async () => {
+    const harness = service();
+    const { id, path } = await mcpFile(harness);
+    expect((await harness.getInventory()).mcpServers.map((entry) => entry.name)).toContain(
+      'filesystem',
+    );
+
+    const outcome = await harness.removeMcpServer(id, 'filesystem');
+    expect(outcome?.ok).toBe(true);
+    if (!outcome?.ok) return;
+
+    expect(outcome.serverName).toBe('filesystem');
+    expect(outcome.removedFrom).toEqual(['mcpServers']);
+    expect(outcome.backupPath).toBeTruthy();
+
+    const after = JSON.parse(readFileSync(path, 'utf8'));
+    expect(after.mcpServers.filesystem).toBeUndefined();
+    expect(after.mcpServers.github).toBeDefined();
+
+    // The cached inventory would otherwise still list the removed server.
+    const names = (await harness.getInventory()).mcpServers.map((entry) => entry.name);
+    expect(names).not.toContain('filesystem');
+  });
+
+  it('reports a server that is not in the file without touching it', async () => {
+    const harness = service();
+    const { id, path } = await mcpFile(harness);
+    const before = readFileSync(path, 'utf8');
+
+    const outcome = await harness.removeMcpServer(id, 'never-configured');
+    expect(outcome?.ok).toBe(false);
+    if (outcome && !outcome.ok) expect(outcome.code).toBe('not-declared');
+    expect(readFileSync(path, 'utf8')).toBe(before);
+  });
+
+  it('refuses in read-only mode', async () => {
+    const harness = service({ readOnly: true });
+    const { id, path } = await mcpFile(harness);
+    const before = readFileSync(path, 'utf8');
+
+    const outcome = await harness.removeMcpServer(id, 'github');
+    expect(outcome?.ok).toBe(false);
+    if (outcome && !outcome.ok) expect(outcome.code).toBe('read-only');
+    expect(readFileSync(path, 'utf8')).toBe(before);
+  });
+
+  it('refuses to edit a credential store', async () => {
+    const harness = service();
+    const result = await harness.getScan();
+    const file = result.files.find((entry) => entry.sensitivity === 'credential-store');
+
+    const outcome = await harness.removeMcpServer(file?.id ?? '', 'anything');
+    expect(outcome?.ok).toBe(false);
+    if (outcome && !outcome.ok) expect(outcome.code).toBe('credential-store');
+  });
+
+  it('rejects a stale hash rather than editing a file that moved on', async () => {
+    const harness = service();
+    const { id, path } = await mcpFile(harness);
+
+    const outcome = await harness.removeMcpServer(id, 'github', 'stale-hash');
+    expect(outcome?.ok).toBe(false);
+    if (outcome && !outcome.ok) expect(outcome.code).toBe('hash-mismatch');
+    expect(readFileSync(path, 'utf8')).toContain('github');
+  });
+
+  it('returns undefined for an unknown file id', async () => {
+    const harness = service();
+    await harness.getScan();
+    expect(await harness.removeMcpServer('nope', 'github')).toBeUndefined();
+  });
+});
+
 describe('capabilities', () => {
   async function capability(harness: HarnessService, name: string) {
     const list = await harness.listCapabilities();

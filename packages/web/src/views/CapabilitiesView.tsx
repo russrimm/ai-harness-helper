@@ -883,6 +883,11 @@ function refusalMessage(outcome: WriteRefusal): string {
       return 'This file changed on disk since it was loaded. Reload to see the latest version before saving again.';
     case 'not-found':
       return 'This file could no longer be found. It may have been moved or deleted.';
+    // MCP-server removal codes, which a capability write never produces; the
+    // switch has to stay exhaustive over the shared refusal union.
+    case 'not-declared':
+    case 'unsupported-format':
+      return outcome.message;
     case 'write-failed':
       return outcome.message;
   }
