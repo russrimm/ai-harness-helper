@@ -357,7 +357,7 @@ async function collectFile(
       locationId: location.id,
       locationLabel: location.label,
       scope: location.scope,
-      kind: location.kind,
+      kind: refineKind(basename(path), location.kind),
       format: formatOverride ?? location.format,
       sensitivity: location.sensitivity,
       size: stats.size,
@@ -463,6 +463,26 @@ function resolveDirectoryFormat(fileName: string, declared: FileFormat): FileFor
   if (inferred === 'text') return declared;
   if (editorLanguage(inferred) === editorLanguage(declared)) return declared;
   return inferred;
+}
+
+/**
+ * Suffixes that name a capability more precisely than its folder does.
+ *
+ * A single directory routinely mixes these — VS Code's `prompts` folder holds
+ * `*.prompt.md`, `*.chatmode.md`, and `*.instructions.md` side by side — so
+ * without this every chat mode would be filed as a prompt.
+ */
+const KIND_SUFFIXES: readonly (readonly [string, FileKind])[] = [
+  ['.chatmode.md', 'chatmode'],
+  ['.prompt.md', 'prompt'],
+  ['.instructions.md', 'instructions'],
+  ['.agent.md', 'agent'],
+  ['.skill.md', 'skill'],
+];
+
+function refineKind(fileName: string, declared: FileKind): FileKind {
+  const lower = fileName.toLowerCase();
+  return KIND_SUFFIXES.find(([suffix]) => lower.endsWith(suffix))?.[1] ?? declared;
 }
 
 /**

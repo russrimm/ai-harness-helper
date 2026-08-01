@@ -5,3 +5,5 @@ export * from './parsers.js';
 export * from './redact.js';
 export * from './scanner.js';
 export * from './aggregate.js';
+export * from './writer.js';
+export * from './service.js';

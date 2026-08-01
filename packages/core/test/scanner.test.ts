@@ -107,6 +107,26 @@ describe('scan - directory locations', () => {
     expect(prompts.find((p) => p.name.endsWith('.md'))?.format).toBe('md-frontmatter');
   });
 
+  it('refines file kind from a capability suffix, not just the folder', async () => {
+    fixture.write('AppData/Roaming/Code/User/prompts/dev.prompt.md', samples.agentFile);
+    fixture.write('AppData/Roaming/Code/User/prompts/Beast.chatmode.md', samples.agentFile);
+    fixture.write('AppData/Roaming/Code/User/prompts/repo.instructions.md', samples.agentFile);
+    fixture.write('.config/Code/User/prompts/dev.prompt.md', samples.agentFile);
+    fixture.write('.config/Code/User/prompts/Beast.chatmode.md', samples.agentFile);
+    fixture.write('.config/Code/User/prompts/repo.instructions.md', samples.agentFile);
+
+    const result = await scan({ environment: fixture.environment });
+    const byName = new Map(
+      result.files
+        .filter((f) => f.locationId === 'user-prompts' && f.providerId === 'vscode')
+        .map((f) => [f.name, f.kind]),
+    );
+
+    expect(byName.get('dev.prompt.md')).toBe('prompt');
+    expect(byName.get('Beast.chatmode.md')).toBe('chatmode');
+    expect(byName.get('repo.instructions.md')).toBe('instructions');
+  });
+
   it('does not descend into ignored directories', async () => {
     fixture.write('.claude/skills/node_modules/evil/SKILL.md', '# nope');
     fixture.write('.claude/skills/real/SKILL.md', '# yes');

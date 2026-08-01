@@ -324,3 +324,133 @@ export function redactText(text: string): { value: string; redactions: Redaction
 
   return { value, redactions };
 }
+
+/**
+ * Masks secrets in a document while leaving its text otherwise intact.
+ *
+ * `redactText` only recognises values that *look* like credentials. A config
+ * file also leaks through its keys — `"password": "hunter2"` is a secret even
+ * though `hunter2` matches no credential shape — so this pass additionally
+ * masks any value whose key name is telling, across the `key: value`,
+ * `"key": "value"`, and `key = "value"` spellings these formats use.
+ *
+ * Working on text rather than a parsed tree keeps comments, key order, and
+ * formatting exactly as the user wrote them, which matters because the result
+ * is what gets displayed next to an editable copy.
+ */
+export function redactDocumentText(text: string): {
+  value: string;
+  redactions: RedactionRecord[];
+} {
+  const redactions: RedactionRecord[] = [];
+  const lines = splitLines(text);
+  let counter = 0;
+  let inPrivateKey = false;
+
+  const record = (
+    line: number,
+    key: string | undefined,
+    raw: string,
+    reason: RedactionReason,
+    detector?: string,
+  ): void => {
+    const path = key ? `${key}@${line}` : `line${line}[${counter}]`;
+    redactions.push({
+      path,
+      id: `r${counter}`,
+      reason,
+      ...(detector !== undefined ? { detector } : {}),
+      length: raw.length,
+    });
+    counter += 1;
+  };
+
+  const masked = lines.map((entry, lineIndex) => {
+    const line = entry.content;
+    const lineNumber = lineIndex + 1;
+
+    // A PEM private key spans many lines whose individual base64 rows look
+    // like nothing in particular, so the block is tracked as state. The BEGIN
+    // and END markers are kept: knowing a key is present is useful, and only
+    // the key material is sensitive.
+    if (PEM_BEGIN.test(line)) {
+      inPrivateKey = true;
+      return line + entry.terminator;
+    }
+    if (inPrivateKey) {
+      if (PEM_END.test(line)) {
+        inPrivateKey = false;
+        return line + entry.terminator;
+      }
+      const body = line.trim();
+      if (body.length === 0) return line + entry.terminator;
+      record(lineNumber, undefined, body, 'value-shape', 'pem-block');
+      return line.replace(body, maskValue(body)) + entry.terminator;
+    }
+
+    // `key: value`, `"key": "value"`, `key = "value"` — the quote style and
+    // separator vary by format, so all are handled in one pass.
+    const assignment =
+      /^(\s*(?:-\s*)?)(["']?)([A-Za-z0-9_.\-/]+)\2(\s*[:=]\s*)(["']?)([^"'#\r\n]*)\5(\s*,?\s*)$/.exec(
+        line,
+      );
+
+    if (assignment) {
+      const [, indent, keyQuote, key, separator, valueQuote, rawValue, trailer] = assignment;
+      const value = rawValue ?? '';
+      if (key !== undefined && value.length > 0 && !isPlaceholderValue(value)) {
+        const detector = detectSecretValue(value);
+        const keyIsSecret = isSecretKey(key);
+        if (keyIsSecret || detector !== undefined) {
+          record(
+            lineNumber,
+            key,
+            value,
+            keyIsSecret ? 'key-name' : 'value-shape',
+            keyIsSecret ? undefined : detector,
+          );
+          return (
+            `${indent}${keyQuote}${key}${keyQuote}${separator}${valueQuote}${maskValue(value)}` +
+            `${valueQuote}${trailer}${entry.terminator}`
+          );
+        }
+      }
+      return line + entry.terminator;
+    }
+
+    // Anything not shaped like an assignment still gets the value-shape sweep,
+    // which catches bare tokens in Markdown or plain text.
+    const swept = line.replace(/[A-Za-z0-9_\-./+=:~]{16,}/g, (candidate) => {
+      const detector = detectSecretValue(candidate);
+      if (detector === undefined) return candidate;
+      record(lineNumber, undefined, candidate, 'value-shape', detector);
+      return maskValue(candidate);
+    });
+    return swept + entry.terminator;
+  });
+
+  return { value: masked.join(''), redactions };
+}
+
+const PEM_BEGIN = /-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----/;
+const PEM_END = /-----END [A-Z0-9 ]*PRIVATE KEY-----/;
+
+/**
+ * Splits text into lines while keeping each line's terminator.
+ *
+ * Rejoining with a fixed `\n` would silently rewrite a CRLF file to LF, which
+ * would make an untouched document read as entirely changed in a diff.
+ */
+function splitLines(text: string): { content: string; terminator: string }[] {
+  const out: { content: string; terminator: string }[] = [];
+  const pattern = /\r\n|\n|\r/g;
+  let start = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = pattern.exec(text)) !== null) {
+    out.push({ content: text.slice(start, match.index), terminator: match[0] });
+    start = pattern.lastIndex;
+  }
+  out.push({ content: text.slice(start), terminator: '' });
+  return out;
+}
