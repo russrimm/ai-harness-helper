@@ -34,6 +34,13 @@ export type FileKind =
   | 'ignore'
   | 'memory'
   | 'extension'
+  /**
+   * A listing of servers or tools that are *available* to install, as opposed
+   * to ones the user has configured. Catalogs are displayed but deliberately
+   * excluded from the harness inventory, because treating a marketplace of
+   * hundreds of offerings as "your servers" would be actively misleading.
+   */
+  | 'catalog'
   | 'credential'
   | 'unknown';
 

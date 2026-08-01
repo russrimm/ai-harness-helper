@@ -133,10 +133,41 @@ export function isSecretKey(key: string): boolean {
   );
 }
 
-/** Returns the detector name when a value looks like a credential. */
+/**
+ * True when a value is a reference to a secret rather than the secret itself.
+ *
+ * Every one of these tools supports indirection — VS Code writes
+ * `${input:api-key}`, Claude Desktop extensions write `${user_config.token}`,
+ * shells write `$TOKEN`, Windows writes `%TOKEN%` — and treating those as
+ * live credentials produces exactly the kind of false alarm that trains
+ * people to ignore the warning.
+ */
+export function isPlaceholderValue(value: string): boolean {
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return true;
+  // Any single fully-enclosing template expression: ${...}, {{...}}, %VAR%, <...>
+  if (/^\$\{[^}]*\}$/.test(trimmed)) return true;
+  if (/^\$[A-Za-z_][A-Za-z0-9_]*$/.test(trimmed)) return true;
+  if (/^\{\{[^{}]*\}\}$/.test(trimmed)) return true;
+  if (/^%[A-Za-z_][A-Za-z0-9_]*%$/.test(trimmed)) return true;
+  if (/^<[^<>]+>$/.test(trimmed)) return true;
+  if (/^(your|my|the|a)[-_ ]?(api[-_ ]?key|token|secret|password|pat)\b/i.test(trimmed))
+    return true;
+  return /^(x{3,}|\*{3,}|\.{3,}|todo|changeme|change[-_ ]?me|placeholder|replace[-_ ]?me|insert[-_ ]?here|example|none|null|undefined)$/i.test(
+    trimmed,
+  );
+}
+
+/**
+ * Identifies a value that looks like a live credential.
+ *
+ * Returns the name of the matched credential shape, or `undefined`. Template
+ * references are never reported — they are pointers to a secret, not one.
+ */
 export function detectSecretValue(value: string): string | undefined {
   const trimmed = value.trim();
   if (trimmed.length < 8) return undefined;
+  if (isPlaceholderValue(trimmed)) return undefined;
   for (const { name, pattern } of SECRET_VALUE_PATTERNS) {
     if (pattern.test(trimmed)) return name;
   }
