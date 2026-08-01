@@ -637,12 +637,30 @@ function maskArgs(args: readonly string[]): string[] {
       if (!arg.startsWith('-') && !isPlaceholderValue(arg)) return REDACTED_PLACEHOLDER;
     }
 
+    // Header-style pairs are commonly passed as one argument:
+    // `Authorization: ****** They must be masked before the bare-flag
+    // branch, which otherwise treats the whole string as a key.
+    const colon = arg.indexOf(':');
+    if (colon > 0) {
+      const name = arg.slice(0, colon).trim().replace(/^-+/, '');
+      const value = arg.slice(colon + 1).trim();
+      if (
+        value.length > 0 &&
+        !isPlaceholderValue(value) &&
+        (isSecretKey(name) || detectSecretValue(value) !== undefined)
+      ) {
+        return `${arg.slice(0, colon + 1)} ${REDACTED_PLACEHOLDER}`;
+      }
+    }
+
     // `--api-key=sk-…` and `KEY=value` both split on the first `=`.
     const equals = arg.indexOf('=');
     if (equals > 0) {
       const name = arg.slice(0, equals).replace(/^-+/, '');
       const value = arg.slice(equals + 1);
       if (value.length > 0 && !isPlaceholderValue(value)) {
+        const maskedPair = maskInlinePair(value);
+        if (maskedPair !== value) return `${arg.slice(0, equals)}=${maskedPair}`;
         if (isSecretKey(name) || detectSecretValue(value) !== undefined) {
           return `${arg.slice(0, equals)}=${REDACTED_PLACEHOLDER}`;
         }
@@ -657,6 +675,21 @@ function maskArgs(args: readonly string[]): string[] {
 
     return detectSecretValue(arg) !== undefined ? REDACTED_PLACEHOLDER : arg;
   });
+}
+
+function maskInlinePair(value: string): string {
+  const colon = value.indexOf(':');
+  if (colon <= 0) return value;
+  const name = value.slice(0, colon).trim();
+  const credential = value.slice(colon + 1).trim();
+  if (
+    credential.length === 0 ||
+    isPlaceholderValue(credential) ||
+    (!isSecretKey(name) && detectSecretValue(credential) === undefined)
+  ) {
+    return value;
+  }
+  return `${value.slice(0, colon + 1)} ${REDACTED_PLACEHOLDER}`;
 }
 
 /**

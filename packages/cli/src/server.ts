@@ -84,10 +84,18 @@ export async function createServer(options: ServerOptions): Promise<HarnessServe
       return;
     }
 
-    // Static assets are unauthenticated so the page can bootstrap; the token
-    // guards every route that touches the filesystem.
-    if (!request.url.startsWith('/api/')) return;
-    if (request.url.startsWith('/api/health')) return;
+    // Fastify decodes paths before routing, so checking the raw request target
+    // would let `/%61pi/...` reach an API handler without passing this gate.
+    const encodedPath = request.url.split('?', 1)[0] ?? '';
+    let routePath: string;
+    try {
+      routePath = decodeURIComponent(encodedPath);
+    } catch {
+      await reply.code(400).send({ error: 'Malformed request path.' });
+      return;
+    }
+    if (!routePath.startsWith('/api/')) return;
+    if (routePath === '/api/health') return;
 
     const provided = extractToken(request);
     if (!provided || !tokensMatch(provided, token)) {

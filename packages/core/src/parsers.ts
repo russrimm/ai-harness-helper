@@ -1,6 +1,7 @@
 import { parse as parseJsonc, type ParseError, printParseErrorCode } from 'jsonc-parser';
 import { parse as parseToml, TomlError } from 'smol-toml';
 import { parse as parseYaml, YAMLParseError } from 'yaml';
+import { redactDocumentText } from './redact.js';
 import type { FileFormat } from './types.js';
 
 /** A recoverable problem encountered while parsing a file. */
@@ -76,12 +77,16 @@ function parseTomlText(text: string): ParseResult {
       return {
         value: undefined,
         issues: [
-          { message: error.message, line: error.line ?? line, column: error.column ?? column },
+          {
+            message: safeParserMessage(error),
+            line: error.line ?? line,
+            column: error.column ?? column,
+          },
         ],
         format: 'toml',
       };
     }
-    return { value: undefined, issues: [{ message: toMessage(error) }], format: 'toml' };
+    return { value: undefined, issues: [{ message: safeParserMessage(error) }], format: 'toml' };
   }
 }
 
@@ -93,12 +98,18 @@ function parseYamlText(text: string, format: FileFormat = 'yaml'): ParseResult {
       const pos = error.linePos?.[0];
       return {
         value: undefined,
-        issues: [{ message: error.message, line: pos?.line, column: pos?.col }],
+        issues: [{ message: safeParserMessage(error), line: pos?.line, column: pos?.col }],
         format,
       };
     }
-    return { value: undefined, issues: [{ message: toMessage(error) }], format };
+    return { value: undefined, issues: [{ message: safeParserMessage(error) }], format };
   }
+}
+
+/** Removes parser-rendered source excerpts before diagnostics reach exports or the API. */
+function safeParserMessage(error: unknown): string {
+  const [summary = 'Unable to parse document.'] = toMessage(error).split(/\r?\n/);
+  return redactDocumentText(summary).value;
 }
 
 /** Matches a leading YAML front matter block delimited by `---`. */

@@ -49,6 +49,13 @@ describe('parseContent - TOML', () => {
     expect(result.value).toBeUndefined();
     expect(result.issues.length).toBeGreaterThan(0);
   });
+
+  it('never includes source credentials in a TOML diagnostic', () => {
+    const secret = `ghp_${'T'.repeat(20)}`;
+    const result = parseContent(`api_key = "${secret}"\napi_key = "${secret}"`, 'toml');
+
+    expect(JSON.stringify(result.issues)).not.toContain(secret);
+  });
 });
 
 describe('parseContent - YAML', () => {
@@ -62,6 +69,13 @@ describe('parseContent - YAML', () => {
   it('reports an error with a line number for malformed YAML', () => {
     const result = parseContent('a:\n  - b\n c: broken indent\n', 'yaml');
     expect(result.issues.length).toBeGreaterThan(0);
+  });
+
+  it('never includes source credentials in a YAML diagnostic', () => {
+    const secret = `ghp_${'Y'.repeat(20)}`;
+    const result = parseContent(`description: demo\n\tGITHUB_TOKEN: ${secret}\n`, 'yaml');
+
+    expect(JSON.stringify(result.issues)).not.toContain(secret);
   });
 });
 

@@ -601,6 +601,41 @@ describe('aggregate - inline credential masking', () => {
     const result = await inventory();
 
     expect(result.mcpServers[0]?.definitions[0]?.args).toContain('GITHUB_TOKEN=••••••••');
+  });
+
+  it('masks credentials embedded in header arguments and conflict findings', async () => {
+    const secret = `ghp_${'H'.repeat(20)}`;
+    fixture.write(
+      '.claude/settings.json',
+      JSON.stringify({
+        mcpServers: {
+          remote: {
+            command: 'npx',
+            args: ['mcp-remote', '--header', 'Authorization: ' + secret],
+          },
+        },
+      }),
+    );
+    fixture.write(
+      '.cursor/mcp.json',
+      JSON.stringify({
+        mcpServers: {
+          remote: {
+            command: 'node',
+            args: ['other.js', '--header=Authorization: ' + secret],
+          },
+        },
+      }),
+    );
+
+    const result = await inventory();
+    const serialized = JSON.stringify(result);
+
+    expect(serialized).not.toContain(secret);
+    expect(serialized).toContain('Authorization: ••••••••');
+    expect(
+      result.findings.find((finding) => finding.code === 'mcp-conflict')?.detail,
+    ).not.toContain(secret);
     expect(JSON.stringify(result)).not.toContain('ghp_abcdefghijklmnopqrstuvwxyz0123456789');
   });
 

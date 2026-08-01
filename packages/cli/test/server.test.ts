@@ -82,6 +82,24 @@ describe('authentication', () => {
     expect(response.statusCode).toBe(401);
   });
 
+  it('rejects encoded API paths with no token', async () => {
+    const attempts: InjectOptions[] = [
+      { url: '/%61pi/scan', token: null },
+      { url: '/ap%69/files/unknown?reveal=true', token: null },
+      { method: 'POST', url: '/%61pi/scan', token: null },
+      {
+        method: 'PUT',
+        url: '/%61pi/files/unknown',
+        token: null,
+        payload: { content: '{}', expectedHash: 'synthetic-hash' },
+      },
+    ];
+
+    for (const attempt of attempts) {
+      expect((await call(attempt)).statusCode).toBe(401);
+    }
+  });
+
   it('rejects a wrong token, including one of a different length', async () => {
     expect((await call({ url: '/api/overview', token: 'wrong' })).statusCode).toBe(401);
     expect((await call({ url: '/api/overview', token: 'x'.repeat(TOKEN.length) })).statusCode).toBe(
@@ -138,6 +156,30 @@ describe('authentication', () => {
 });
 
 describe('read routes', () => {
+  it('never exposes a malformed document secret in HTTP diagnostics or exports', async () => {
+    const secret = `ghp_${'D'.repeat(20)}`;
+    const malformed = `api_key = "${secret}"\napi_key = "${secret}"`;
+    fixture.write('.codex/config.toml', malformed);
+    const id = await firstFileId('.codex/config.toml');
+
+    const responses = [
+      await call({ url: `/api/files/${id}` }),
+      await call({ url: '/api/overview' }),
+      await call({ url: '/api/inventory' }),
+      await call({ url: '/api/export?format=json' }),
+      await call({ url: '/api/export?format=markdown' }),
+      await call({
+        method: 'PUT',
+        url: `/api/files/${id}`,
+        payload: { content: malformed, expectedHash: 'synthetic-hash' },
+      }),
+    ];
+
+    expect(responses.every((response) => response.statusCode < 500)).toBe(true);
+    for (const response of responses) {
+      expect(response.body).not.toContain(secret);
+    }
+  });
   it('returns an overview with a summary, findings, and a tree', async () => {
     const body = (await call({ url: '/api/overview' })).json() as {
       summary: { fileCount: number };
