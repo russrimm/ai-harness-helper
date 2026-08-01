@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { readFile, stat } from 'node:fs/promises';
+import { lstat, open } from 'node:fs/promises';
 import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import { glob } from 'tinyglobby';
 import { expandTemplates, toDisplayPath } from './paths.js';
@@ -103,6 +103,10 @@ export interface ScanOptions {
   readonly maxFileBytes?: number;
   /** Depth limit for the unattributed-file sweep inside project roots. */
   readonly sweepDepth?: number;
+  /** Maximum number of registry locations inspected concurrently. */
+  readonly concurrency?: number;
+  /** Cancels an in-progress scan. */
+  readonly signal?: AbortSignal;
 }
 
 /** Files above this size are reported without a content hash. */
@@ -149,8 +153,20 @@ function fileId(path: string): string {
 /** Hashes file content so writes can detect external modification. */
 async function hashFile(path: string, size: number, maxBytes: number): Promise<string> {
   if (size > maxBytes) return '';
-  const content = await readFile(path);
-  return createHash('sha256').update(content).digest('hex');
+  const handle = await open(path, 'r');
+  try {
+    const content = Buffer.allocUnsafe(Math.min(maxBytes + 1, size + 1));
+    let offset = 0;
+    while (offset < content.length) {
+      const { bytesRead } = await handle.read(content, offset, content.length - offset, offset);
+      if (bytesRead === 0) break;
+      offset += bytesRead;
+    }
+    if (offset > size || offset > maxBytes) return '';
+    return createHash('sha256').update(content.subarray(0, offset)).digest('hex');
+  } finally {
+    await handle.close();
+  }
 }
 
 function classifyError(error: unknown): ScanProblem['code'] {
@@ -176,18 +192,19 @@ export async function scan(options: ScanOptions): Promise<ScanResult> {
   const { environment } = options;
   const maxFileBytes = options.maxFileBytes ?? DEFAULT_MAX_FILE_BYTES;
   const projectRoots = (options.projectRoots ?? []).map((root) => resolve(root));
+  const concurrency = Math.max(1, options.concurrency ?? 16);
 
   const files: DiscoveredFile[] = [];
   const missing: MissingLocation[] = [];
   const problems: ScanProblem[] = [];
   const claimed = new Set<string>();
 
-  const tasks: Array<Promise<void>> = [];
+  const tasks: Array<() => Promise<void>> = [];
 
   for (const { provider, location } of allLocations()) {
     if (location.scope === 'project') {
       for (const root of projectRoots) {
-        tasks.push(
+        tasks.push(() =>
           collectLocation(
             provider,
             location,
@@ -202,7 +219,7 @@ export async function scan(options: ScanOptions): Promise<ScanResult> {
         );
       }
     } else if (!options.projectsOnly) {
-      tasks.push(
+      tasks.push(() =>
         collectLocation(
           provider,
           location,
@@ -217,22 +234,25 @@ export async function scan(options: ScanOptions): Promise<ScanResult> {
     }
   }
 
-  await Promise.all(tasks);
+  await runBounded(tasks, concurrency, options.signal);
 
   // The sweep runs after every provider has claimed its files so it only
   // reports genuinely unattributed ones.
-  await Promise.all(
-    projectRoots.map((root) =>
-      sweepProject(
-        root,
-        environment,
-        maxFileBytes,
-        options.sweepDepth ?? 4,
-        files,
-        problems,
-        claimed,
-      ),
+  await runBounded(
+    projectRoots.map(
+      (root) => () =>
+        sweepProject(
+          root,
+          environment,
+          maxFileBytes,
+          options.sweepDepth ?? 4,
+          files,
+          problems,
+          claimed,
+        ),
     ),
+    concurrency,
+    options.signal,
   );
 
   files.sort((a, b) => a.path.localeCompare(b.path));
@@ -330,10 +350,14 @@ async function collectFile(
 ): Promise<boolean> {
   const key = claimKey(path, environment);
   if (claimed.has(key)) return false;
+  claimed.add(key);
 
   try {
-    const stats = await stat(path);
-    if (!stats.isFile()) return false;
+    const stats = await lstat(path);
+    if (stats.isSymbolicLink() || !stats.isFile()) {
+      claimed.delete(key);
+      return false;
+    }
 
     const hash = await hashFile(path, stats.size, maxFileBytes);
     if (hash === '') {
@@ -346,7 +370,6 @@ async function collectFile(
       });
     }
 
-    claimed.add(key);
     files.push({
       id: fileId(path),
       path,
@@ -369,6 +392,7 @@ async function collectFile(
     });
     return true;
   } catch (error) {
+    claimed.delete(key);
     const code = classifyError(error);
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false;
     problems.push({
@@ -394,8 +418,8 @@ async function collectDirectory(
   projectRoot?: string,
 ): Promise<number> {
   try {
-    const stats = await stat(directory);
-    if (!stats.isDirectory()) return 0;
+    const stats = await lstat(directory);
+    if (stats.isSymbolicLink() || !stats.isDirectory()) return 0;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return 0;
     problems.push({
@@ -520,8 +544,8 @@ async function sweepProject(
     if (claimed.has(key)) continue;
 
     try {
-      const stats = await stat(path);
-      if (!stats.isFile()) continue;
+      const stats = await lstat(path);
+      if (stats.isSymbolicLink() || !stats.isFile()) continue;
       const hash = await hashFile(path, stats.size, maxFileBytes);
       const name = basename(path);
 
@@ -593,4 +617,24 @@ function providerOrder(providerId: string): number {
 /** Absolute path to a file inside a project root, used by tests and the API. */
 export function projectFile(root: string, ...segments: string[]): string {
   return join(root, ...segments);
+}
+
+async function runBounded(
+  tasks: readonly (() => Promise<void>)[],
+  concurrency: number,
+  signal?: AbortSignal,
+): Promise<void> {
+  let next = 0;
+  const worker = async (): Promise<void> => {
+    while (next < tasks.length) {
+      signal?.throwIfAborted();
+      const task = tasks[next];
+      next += 1;
+      await task?.();
+    }
+  };
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, tasks.length) }, async () => worker()),
+  );
+  signal?.throwIfAborted();
 }

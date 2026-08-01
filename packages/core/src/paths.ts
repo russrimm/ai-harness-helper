@@ -123,7 +123,9 @@ export function expandTemplate(
  * filesystem, so Windows layouts can be resolved on Linux and vice versa.
  */
 export function normalizeAbsolute(input: string, platform: PlatformId): string {
-  const collapsed = input.replace(/[\\/]+/g, platform === 'win32' ? '\\' : '/');
+  const windowsNetworkPath = platform === 'win32' && /^[\\/]{2}/.test(input);
+  let collapsed = input.replace(/[\\/]+/g, platform === 'win32' ? '\\' : '/');
+  if (windowsNetworkPath) collapsed = `\\${collapsed}`;
   const trimmed =
     collapsed.length > 3 && (collapsed.endsWith('\\') || collapsed.endsWith('/'))
       ? collapsed.slice(0, -1)

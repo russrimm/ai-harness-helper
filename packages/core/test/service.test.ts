@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { HarnessService } from '../src/service.js';
@@ -134,6 +134,28 @@ describe('documents', () => {
     expect(value).toBe('sk-ant-api03-abcdefghijklmnopqrstuvwxyz012345');
   });
 
+  it('reveals the requested nested value instead of a same-named root value', async () => {
+    fixture.write(
+      '.claude/settings.json',
+      JSON.stringify(
+        {
+          token: 'synthetic-root-value-0001',
+          mcpServers: { demo: { env: { token: 'synthetic-nested-value-0002' } } },
+        },
+        null,
+        2,
+      ),
+    );
+    const harness = service();
+    const id = await findId(harness, '.claude/settings.json');
+    const document = await harness.getDocument(id);
+    const nested = document?.redactions.find(
+      (entry) => entry.length === 'synthetic-nested-value-0002'.length,
+    );
+
+    expect(await harness.revealValue(id, nested?.id ?? '')).toBe('synthetic-nested-value-0002');
+  });
+
   it('refuses to reveal an unknown redaction id', async () => {
     const harness = service();
     const id = await findId(harness, '.claude/settings.json');
@@ -155,6 +177,33 @@ describe('documents', () => {
 
     const document = await harness.getDocument(id);
     expect(document?.issues.length).toBeGreaterThan(0);
+  });
+
+  it.skipIf(process.platform === 'win32')(
+    'refuses a file replaced by a symlink after scanning',
+    async () => {
+      const harness = service();
+      const id = await findId(harness, '.claude/settings.json');
+      const file = harness.findFile(id);
+      const outside = fixture.write('outside.json', '{"password":"synthetic-outside-value"}');
+      unlinkSync(file?.path ?? '');
+      symlinkSync(outside, file?.path ?? '');
+
+      const document = await harness.getDocument(id);
+      expect(document?.content).toBe('');
+      expect(document?.issues[0]?.message).toMatch(/regular file|symbolic/i);
+    },
+  );
+
+  it('bounds a file that grows after scanning', async () => {
+    const harness = service();
+    const id = await findId(harness, '.claude/settings.json');
+    const file = harness.findFile(id);
+    writeFileSync(file?.path ?? '', 'x'.repeat(2 * 1024 * 1024 + 1));
+
+    const document = await harness.getDocument(id);
+    expect(document?.content).toBe('');
+    expect(document?.issues[0]?.message).toMatch(/read limit/i);
   });
 });
 

@@ -15,8 +15,8 @@
  *    mid-write cannot leave a truncated config behind.
  */
 
-import { createHash } from 'node:crypto';
-import { copyFile, mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises';
+import { createHash, randomBytes } from 'node:crypto';
+import { copyFile, lstat, mkdir, open, readFile, rename, unlink } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 
@@ -150,7 +150,18 @@ export async function writeConfigFile(
   }
 
   let existing: string | undefined;
+  let existingMode: number | undefined;
   try {
+    const stats = await lstat(request.path);
+    if (stats.isSymbolicLink() || !stats.isFile()) {
+      return {
+        ok: false,
+        code: 'write-failed',
+        message:
+          'The target is not a regular file. Symbolic links and special files are not editable.',
+      };
+    }
+    existingMode = stats.mode;
     existing = await readFile(request.path, 'utf8');
   } catch (error) {
     if (!isNotFound(error)) {
@@ -208,7 +219,7 @@ export async function writeConfigFile(
   }
 
   try {
-    await atomicWrite(request.path, request.content);
+    await atomicWrite(request.path, request.content, existingMode);
   } catch (error) {
     return {
       ok: false,
@@ -253,13 +264,22 @@ async function createBackup(path: string, backupRoot: string, now: Date): Promis
  * with unparseable configuration; a rename is atomic on every platform we
  * support, so the file is either fully old or fully new.
  */
-async function atomicWrite(path: string, content: string): Promise<void> {
-  const temporary = join(dirname(path), `.${basename(path)}.aihh-${process.pid}.tmp`);
+async function atomicWrite(path: string, content: string, existingMode?: number): Promise<void> {
+  const temporary = join(
+    dirname(path),
+    `.${basename(path)}.aihh-${process.pid}-${randomBytes(8).toString('hex')}.tmp`,
+  );
   await mkdir(dirname(path), { recursive: true });
+  let handle;
   try {
-    await writeFile(temporary, content, 'utf8');
+    handle = await open(temporary, 'wx', existingMode === undefined ? 0o600 : existingMode & 0o777);
+    await handle.writeFile(content, 'utf8');
+    await handle.sync();
+    await handle.close();
+    handle = undefined;
     await rename(temporary, path);
   } catch (error) {
+    await handle?.close().catch(() => undefined);
     await unlink(temporary).catch(() => undefined);
     throw error;
   }

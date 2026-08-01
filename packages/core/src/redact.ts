@@ -118,7 +118,7 @@ export interface RedactionResult<T = unknown> {
 export const REDACTED_PLACEHOLDER = '••••••••';
 
 function normalizeKey(key: string): string {
-  return key.toLowerCase().replace(/[\s-]/g, '_');
+  return key.normalize('NFKC').toLowerCase().replace(/[\s-]/g, '_');
 }
 
 /** True when a key name alone justifies masking its value. */
@@ -171,7 +171,29 @@ export function detectSecretValue(value: string): string | undefined {
   for (const { name, pattern } of SECRET_VALUE_PATTERNS) {
     if (pattern.test(trimmed)) return name;
   }
+  if (/^[A-Za-z0-9+/]{24,}={0,2}$/.test(trimmed)) {
+    try {
+      const decoded = Buffer.from(trimmed, 'base64').toString('utf8');
+      if (
+        decoded.length >= 8 &&
+        isPrintableAscii(decoded) &&
+        (SECRET_VALUE_PATTERNS.some(({ pattern }) => pattern.test(decoded.trim())) ||
+          /(?:api[_-]?key|token|secret|password|authorization)\s*[:=]/i.test(decoded))
+      ) {
+        return 'Base64-encoded credential';
+      }
+    } catch {
+      // Invalid base64 is not a credential signal.
+    }
+  }
   return undefined;
+}
+
+function isPrintableAscii(value: string): boolean {
+  return [...value].every((character) => {
+    const code = character.charCodeAt(0);
+    return code === 9 || code === 10 || code === 13 || (code >= 32 && code <= 126);
+  });
 }
 
 /**
@@ -199,7 +221,7 @@ function joinPath(parent: string, segment: string | number): string {
  */
 export function redactValue<T>(input: T): RedactionResult<T> {
   const redactions: RedactionRecord[] = [];
-  const seen = new WeakSet<object>();
+  const resolved = new WeakMap<object, unknown>();
 
   function walk(node: unknown, path: string, parentKey: string | undefined): unknown {
     if (typeof node === 'string') {
@@ -220,16 +242,22 @@ export function redactValue<T>(input: T): RedactionResult<T> {
     }
 
     if (Array.isArray(node)) {
-      if (seen.has(node)) return node;
-      seen.add(node);
-      return node.map((item, index) => walk(item, joinPath(path, index), parentKey));
+      const cached = resolved.get(node);
+      if (cached !== undefined) return cached;
+      const out: unknown[] = [];
+      resolved.set(node, out);
+      for (const [index, item] of node.entries()) {
+        out.push(walk(item, joinPath(path, index), parentKey));
+      }
+      return out;
     }
 
     if (node !== null && typeof node === 'object') {
-      if (seen.has(node)) return node;
-      seen.add(node);
+      const cached = resolved.get(node);
+      if (cached !== undefined) return cached;
 
       const out: Record<string, unknown> = {};
+      resolved.set(node, out);
       const sensitiveContainer = parentKey !== undefined && isSensitiveContainer(parentKey);
 
       for (const [key, child] of Object.entries(node as Record<string, unknown>)) {
@@ -338,7 +366,10 @@ export function redactText(text: string): { value: string; redactions: Redaction
  * formatting exactly as the user wrote them, which matters because the result
  * is what gets displayed next to an editable copy.
  */
-export function redactDocumentText(text: string): {
+export function redactDocumentText(
+  text: string,
+  structured?: unknown,
+): {
   value: string;
   redactions: RedactionRecord[];
 } {
@@ -346,6 +377,8 @@ export function redactDocumentText(text: string): {
   const lines = splitLines(text);
   let counter = 0;
   let inPrivateKey = false;
+  let blockScalarIndent: number | undefined;
+  const structuredSecrets = collectStructuredSecrets(structured);
 
   const record = (
     line: number,
@@ -366,8 +399,21 @@ export function redactDocumentText(text: string): {
   };
 
   const masked = lines.map((entry, lineIndex) => {
-    const line = entry.content;
+    let line = entry.content;
     const lineNumber = lineIndex + 1;
+
+    if (blockScalarIndent !== undefined) {
+      const indent = /^\s*/.exec(line)?.[0].length ?? 0;
+      if (line.trim().length === 0 || indent > blockScalarIndent) {
+        const body = line.trim();
+        if (body.length > 0) {
+          record(lineNumber, undefined, body, 'key-name', 'block scalar');
+          line = line.replace(body, maskValue(body));
+        }
+        return line + entry.terminator;
+      }
+      blockScalarIndent = undefined;
+    }
 
     // A PEM private key spans many lines whose individual base64 rows look
     // like nothing in particular, so the block is tracked as state. The BEGIN
@@ -388,38 +434,104 @@ export function redactDocumentText(text: string): {
       return line.replace(body, maskValue(body)) + entry.terminator;
     }
 
-    // `key: value`, `"key": "value"`, `key = "value"` — the quote style and
-    // separator vary by format, so all are handled in one pass.
-    const assignment =
-      /^(\s*(?:-\s*)?)(["']?)([A-Za-z0-9_.\-/]+)\2(\s*[:=]\s*)(["']?)([^"'#\r\n]*)\5(\s*,?\s*)$/.exec(
-        line,
-      );
-
-    if (assignment) {
-      const [, indent, keyQuote, key, separator, valueQuote, rawValue, trailer] = assignment;
-      const value = rawValue ?? '';
-      if (key !== undefined && value.length > 0 && !isPlaceholderValue(value)) {
+    // Quoted assignments may appear more than once on minified JSON lines.
+    line = line.replace(
+      /(["'])([^"'\\]+)\1(\s*[:=]\s*)(["'])((?:\\.|(?!\4).)*)\4/g,
+      (
+        whole,
+        keyQuote: string,
+        key: string,
+        separator: string,
+        valueQuote: string,
+        raw: string,
+      ) => {
+        const value = unescapeQuoted(raw, valueQuote);
+        if (isPlaceholderValue(value)) return whole;
         const detector = detectSecretValue(value);
         const keyIsSecret = isSecretKey(key);
-        if (keyIsSecret || detector !== undefined) {
+        const structurallySecret = hasStructuredSecret(structuredSecrets, key, value);
+        if (!keyIsSecret && detector === undefined && !structurallySecret) return whole;
+        record(
+          lineNumber,
+          key,
+          value,
+          keyIsSecret || structurallySecret ? 'key-name' : 'value-shape',
+          keyIsSecret ? undefined : detector,
+        );
+        return `${keyQuote}${key}${keyQuote}${separator}${valueQuote}${maskValue(value)}${valueQuote}`;
+      },
+    );
+
+    const unquotedKeyQuotedValue =
+      /^(\s*(?:-\s*)?)([^:=\s][^:=]*?)(\s*[:=]\s*)(["'])((?:\\.|(?!\4).)*)\4(\s*,?\s*(?:#.*)?)$/.exec(
+        line,
+      );
+    if (unquotedKeyQuotedValue) {
+      const [, indent, keyToken, separator, valueQuote, raw, trailer] = unquotedKeyQuotedValue;
+      if (/^["']/.test(keyToken?.trim() ?? '')) return line + entry.terminator;
+      const key = keyToken?.trim();
+      const value = unescapeQuoted(raw ?? '', valueQuote ?? '"');
+      if (!isPlaceholderValue(value)) {
+        const detector = detectSecretValue(value);
+        const keyIsSecret = key !== undefined && isSecretKey(key);
+        const structurallySecret =
+          key !== undefined && hasStructuredSecret(structuredSecrets, key, value);
+        if (keyIsSecret || detector !== undefined || structurallySecret) {
           record(
             lineNumber,
             key,
             value,
-            keyIsSecret ? 'key-name' : 'value-shape',
+            keyIsSecret || structurallySecret ? 'key-name' : 'value-shape',
             keyIsSecret ? undefined : detector,
           );
           return (
-            `${indent}${keyQuote}${key}${keyQuote}${separator}${valueQuote}${maskValue(value)}` +
-            `${valueQuote}${trailer}${entry.terminator}`
+            `${indent}${keyToken}${separator}${valueQuote}${maskValue(value)}${valueQuote}` +
+            `${trailer}${entry.terminator}`
           );
         }
       }
       return line + entry.terminator;
     }
 
-    // Anything not shaped like an assignment still gets the value-shape sweep,
-    // which catches bare tokens in Markdown or plain text.
+    // Unquoted YAML/TOML/INI-style assignments, including trailing comments.
+    const assignment =
+      /^(\s*(?:-\s*)?)("[^"]+"|'[^']+'|[^:=\s][^:=]*?)(\s*[:=]\s*)((?!["']).*?)(\s+#.*)?$/.exec(
+        line,
+      );
+    if (assignment) {
+      const [, indent, keyToken, separator, rawValue, comment = ''] = assignment;
+      const key = stripKeyQuotes(keyToken?.trim());
+      const value = rawValue?.trim() ?? '';
+      if (/^["']/.test(value)) return line + entry.terminator;
+      if (key !== undefined && isSecretKey(key) && /^[|>]([+-]?\d*)?$/.test(value)) {
+        blockScalarIndent = indent?.length ?? 0;
+        return line + entry.terminator;
+      }
+      if (key !== undefined && value.length > 0 && !isPlaceholderValue(value)) {
+        const detector = detectSecretValue(value);
+        const keyIsSecret = isSecretKey(key);
+        const structurallySecret =
+          key !== undefined && hasStructuredSecret(structuredSecrets, key, value);
+        if (keyIsSecret || detector !== undefined || structurallySecret) {
+          record(
+            lineNumber,
+            key,
+            value,
+            keyIsSecret || structurallySecret ? 'key-name' : 'value-shape',
+            keyIsSecret ? undefined : detector,
+          );
+          return `${indent}${keyToken}${separator}${maskValue(value)}${comment}${entry.terminator}`;
+        }
+      }
+    }
+
+    // Every line gets a value-shape sweep, including assignment keys and values.
+    line = line.replace(/Bearer\s+[A-Za-z0-9._~+/-]{20,}=*/gi, (candidate) => {
+      const detector = detectSecretValue(candidate);
+      if (detector === undefined) return candidate;
+      record(lineNumber, undefined, candidate, 'value-shape', detector);
+      return maskValue(candidate);
+    });
     const swept = line.replace(/[A-Za-z0-9_\-./+=:~]{16,}/g, (candidate) => {
       const detector = detectSecretValue(candidate);
       if (detector === undefined) return candidate;
@@ -430,6 +542,67 @@ export function redactDocumentText(text: string): {
   });
 
   return { value: masked.join(''), redactions };
+}
+
+function collectStructuredSecrets(structured: unknown): Map<string, Set<string>> {
+  const values = new Map<string, Set<string>>();
+  const ancestors = new WeakSet<object>();
+
+  const add = (key: string, value: string): void => {
+    const existing = values.get(key);
+    if (existing) existing.add(value);
+    else values.set(key, new Set([value]));
+  };
+
+  const walk = (node: unknown, parentKey?: string): void => {
+    if (node === null || typeof node !== 'object') return;
+    if (ancestors.has(node)) return;
+    ancestors.add(node);
+    const sensitiveContainer = parentKey !== undefined && isSensitiveContainer(parentKey);
+    for (const [key, child] of Object.entries(node as Record<string, unknown>)) {
+      if (typeof child === 'string') {
+        if (sensitiveContainer || isSecretKey(key) || detectSecretValue(child) !== undefined) {
+          add(key, child);
+        }
+      } else {
+        walk(child, key);
+      }
+    }
+    ancestors.delete(node);
+  };
+
+  walk(structured);
+  return values;
+}
+
+function hasStructuredSecret(
+  secrets: ReadonlyMap<string, ReadonlySet<string>>,
+  key: string,
+  value: string,
+): boolean {
+  return secrets.get(key)?.has(value) ?? false;
+}
+
+function stripKeyQuotes(key: string | undefined): string | undefined {
+  if (key === undefined) return undefined;
+  if (
+    key.length >= 2 &&
+    ((key.startsWith('"') && key.endsWith('"')) || (key.startsWith("'") && key.endsWith("'")))
+  ) {
+    return key.slice(1, -1);
+  }
+  return key;
+}
+
+function unescapeQuoted(value: string, quote: string): string {
+  if (quote === '"') {
+    try {
+      return JSON.parse(`"${value}"`) as string;
+    } catch {
+      return value;
+    }
+  }
+  return value.replace(/\\'/g, "'").replace(/\\\\/g, '\\');
 }
 
 const PEM_BEGIN = /-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----/;

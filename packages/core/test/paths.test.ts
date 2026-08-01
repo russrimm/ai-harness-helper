@@ -95,6 +95,20 @@ describe('expandTemplate', () => {
   it('collapses duplicate separators', () => {
     expect(expandTemplate('{home}//.claude///agents', mac)).toBe('/Users/dev/.claude/agents');
   });
+
+  it('preserves UNC and extended-length Windows path prefixes', () => {
+    const unc = createEnvironment({
+      platform: 'win32',
+      home: '\\\\server\\users\\dev',
+      env: {},
+    });
+    expect(expandTemplate('{home}//.claude/settings.json', unc)).toBe(
+      '\\\\server\\users\\dev\\.claude\\settings.json',
+    );
+    expect(expandTemplate('\\\\?\\C:\\Users\\dev\\.claude\\settings.json', unc)).toBe(
+      '\\\\?\\C:\\Users\\dev\\.claude\\settings.json',
+    );
+  });
 });
 
 describe('expandTemplates', () => {

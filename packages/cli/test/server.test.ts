@@ -70,6 +70,10 @@ describe('authentication', () => {
     const response = await call({ url: '/api/health', token: null });
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual({ ok: true, readOnly: false });
+    expect(response.headers['cache-control']).toBe('no-store');
+    expect(response.headers['content-security-policy']).toContain("default-src 'self'");
+    expect(response.headers['referrer-policy']).toBe('no-referrer');
+    expect(response.headers['x-content-type-options']).toBe('nosniff');
   });
 
   it('rejects an API call with no token', async () => {
@@ -386,6 +390,37 @@ describe('search and export', () => {
     expect(markdown.headers['content-type']).toContain('text/markdown');
     expect(markdown.body).toContain('# Agentic harness report');
     expect(markdown.body).not.toContain('sk-ant-api03-abcdefghij');
+  });
+
+  it('redacts inline MCP credentials from inventory and every export format', async () => {
+    const argumentSecret = `ghp_${'S'.repeat(20)}`;
+    const querySecret = 'synthetic-query-secret-0001';
+    fixture.write(
+      '.claude/settings.json',
+      JSON.stringify({
+        mcpServers: {
+          shared: { command: 'npx', args: ['server-one', '--token', argumentSecret] },
+        },
+      }),
+    );
+    fixture.write(
+      '.cursor/mcp.json',
+      JSON.stringify({
+        mcpServers: {
+          shared: { url: `https://mcp.example.test/sse?access_token=${querySecret}` },
+        },
+      }),
+    );
+
+    for (const url of [
+      '/api/inventory',
+      '/api/export?format=json',
+      '/api/export?format=markdown',
+    ]) {
+      const response = await call({ url });
+      expect(response.body).not.toContain(argumentSecret);
+      expect(response.body).not.toContain(querySecret);
+    }
   });
 });
 

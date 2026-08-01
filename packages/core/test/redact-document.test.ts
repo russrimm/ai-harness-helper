@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { redactDocumentText, REDACTED_PLACEHOLDER } from '../src/redact.js';
+import { redactDocumentText, redactValue, REDACTED_PLACEHOLDER } from '../src/redact.js';
 
 describe('redactDocumentText', () => {
   it('masks a value whose key name looks secret', () => {
@@ -133,5 +133,78 @@ describe('redactDocumentText', () => {
   it('preserves CRLF line endings', () => {
     const source = '{\r\n  "model": "opus"\r\n}';
     expect(redactDocumentText(source).value).toBe(source);
+  });
+
+  it('masks quoted values containing comment and quote characters', () => {
+    const source = [
+      '  "password": "Synthetic#Password-123",',
+      '  "apiKey": "synthetic\'value-abc",',
+      'token: synthetic_secret_value  # retained comment',
+    ].join('\n');
+    const { value } = redactDocumentText(source);
+
+    expect(value).not.toContain('Synthetic#Password-123');
+    expect(value).not.toContain("synthetic'value-abc");
+    expect(value).not.toContain('synthetic_secret_value');
+    expect(value).toContain('# retained comment');
+  });
+
+  it('masks every value in a minified structured env block', () => {
+    const source =
+      '{"mcpServers":{"demo":{"env":{"SERVICE_ACCOUNT":"synthetic-live-value-0001"}}}}';
+    const structured = {
+      mcpServers: { demo: { env: { SERVICE_ACCOUNT: 'synthetic-live-value-0001' } } },
+    };
+    const { value } = redactDocumentText(source, structured);
+
+    expect(value).not.toContain('synthetic-live-value-0001');
+  });
+
+  it('masks quoted keys with unquoted YAML values', () => {
+    const source = '"password": synthetic-bare-value\n';
+    const structured = { password: 'synthetic-bare-value' };
+    expect(redactDocumentText(source, structured).value).not.toContain('synthetic-bare-value');
+  });
+
+  it('does not mask unrelated values that equal a benign env setting', () => {
+    const source = '{"env":{"FORCE_COLOR":"1","MODE":"npx"},"retries":"1","runner":"npx"}';
+    const structured = { env: { FORCE_COLOR: '1', MODE: 'npx' }, retries: '1', runner: 'npx' };
+    const { value } = redactDocumentText(source, structured);
+
+    expect(value).toContain('"retries":"1"');
+    expect(value).toContain('"runner":"npx"');
+    expect(value).not.toContain('"FORCE_COLOR":"1"');
+    expect(value).not.toContain('"MODE":"npx"');
+  });
+
+  it('masks YAML block scalars held by secret keys', () => {
+    const source =
+      'apiKey: |\n  synthetic-secret-line-one\n  synthetic-secret-line-two\nnext: safe\n';
+    const { value } = redactDocumentText(source);
+
+    expect(value).not.toContain('synthetic-secret-line-one');
+    expect(value).not.toContain('synthetic-secret-line-two');
+    expect(value).toContain('next: safe');
+  });
+
+  it('normalizes compatibility characters in secret key names', () => {
+    const source = 'ａｐｉＫｅｙ: synthetic-value-0001';
+    expect(redactDocumentText(source).value).not.toContain('synthetic-value-0001');
+  });
+
+  it('masks bearer credentials and base64-wrapped assignments', () => {
+    const encoded = Buffer.from('token=synthetic-secret-value-0001').toString('base64');
+    const source = `header: Bearer ${'A'.repeat(24)}\nblob: ${encoded}`;
+    const { value } = redactDocumentText(source);
+
+    expect(value).not.toContain(`Bearer ${'A'.repeat(24)}`);
+    expect(value).not.toContain(encoded);
+  });
+
+  it('redacts every occurrence of a shared object', () => {
+    const shared = { apiKey: 'synthetic-shared-value' };
+    const result = redactValue({ first: shared, second: shared });
+
+    expect(JSON.stringify(result.value)).not.toContain('synthetic-shared-value');
   });
 });

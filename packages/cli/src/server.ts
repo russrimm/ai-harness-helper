@@ -95,6 +95,17 @@ export async function createServer(options: ServerOptions): Promise<HarnessServe
     }
   });
 
+  app.addHook('onSend', async (_request, reply) => {
+    void reply
+      .header('cache-control', 'no-store')
+      .header(
+        'content-security-policy',
+        "default-src 'self'; connect-src 'self'; img-src 'self' data:",
+      )
+      .header('referrer-policy', 'no-referrer')
+      .header('x-content-type-options', 'nosniff');
+  });
+
   app.get('/api/health', async () => ({ ok: true, readOnly: service.readOnly }));
 
   app.get('/api/scan', async () => {

@@ -6,13 +6,13 @@
  * can be tested without a socket.
  */
 
-import { readFile } from 'node:fs/promises';
 import { isAbsolute, resolve, sep } from 'node:path';
 
 import { aggregate, type HarnessInventory } from './aggregate.js';
 import { editorLanguage, parseContent, type ParseIssue } from './parsers.js';
 import { createEnvironment, toDisplayPath } from './paths.js';
 import { redactDocumentText, resolveRedactionPath, type RedactionRecord } from './redact.js';
+import { readRegularText } from './safe-file.js';
 import { groupByProvider, scan, type DiscoveredFile, type ScanResult } from './scanner.js';
 import type { ResolverEnvironment } from './types.js';
 import { hashContent, writeConfigFile, type WriteOutcome, type WriterOptions } from './writer.js';
@@ -213,7 +213,7 @@ export class HarnessService {
 
     let text: string;
     try {
-      text = await readFile(file.path, 'utf8');
+      text = await readRegularText(file.path, MAX_DOCUMENT_BYTES);
     } catch (error) {
       return {
         file,
@@ -244,7 +244,7 @@ export class HarnessService {
       };
     }
 
-    const redacted = redactDocumentText(text);
+    const redacted = redactDocumentText(text, parsed.value);
     return {
       file,
       content: redacted.value,
@@ -271,21 +271,20 @@ export class HarnessService {
 
     let text: string;
     try {
-      text = await readFile(file.path, 'utf8');
+      text = await readRegularText(file.path, MAX_DOCUMENT_BYTES);
     } catch {
       return undefined;
     }
 
-    const redacted = redactDocumentText(text);
+    const parsed = parseContent(text, file.format);
+    const redacted = redactDocumentText(text, parsed.value);
     const record = redacted.redactions.find((entry) => entry.id === redactionId);
     if (!record) return undefined;
 
     // `key@line` records point at a line; `lineN[i]` records point at a token.
-    const parsed = parseContent(text, file.format);
-    const structured = resolveRedactionPath(parsed.value, record.path.split('@')[0] ?? '');
-    if (typeof structured === 'string') return structured;
+    if (record.path.includes('@')) return extractFromLine(text, record);
 
-    return extractFromLine(text, record);
+    return resolveRedactionPath(parsed.value, record.path);
   }
 
   /** Applies an edit, subject to every writer guard. */
@@ -336,7 +335,7 @@ export class HarnessService {
 
       let text: string;
       try {
-        text = await readFile(file.path, 'utf8');
+        text = await readRegularText(file.path, MAX_DOCUMENT_BYTES);
       } catch {
         continue;
       }
@@ -345,7 +344,8 @@ export class HarnessService {
 
       // Redact first, then match on the masked text, so a query can never be
       // used to confirm a secret's contents character by character.
-      const masked = redactDocumentText(text).value;
+      const parsed = parseContent(text, file.format);
+      const masked = redactDocumentText(text, parsed.value).value;
       const lines = masked.split(/\r?\n/);
 
       for (let index = 0; index < lines.length; index += 1) {
@@ -490,8 +490,19 @@ function extractFromLine(text: string, record: RedactionRecord): string | undefi
   const line = text.split(/\r?\n/)[lineNumber - 1];
   if (line === undefined) return undefined;
 
-  const quoted = /["']([^"']+)["']\s*,?\s*$/.exec(line);
-  if (quoted?.[1] !== undefined && quoted[1].length === record.length) return quoted[1];
+  const key = record.path.split('@')[0];
+  if (key) {
+    const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const quotedPair = new RegExp(
+      `["']${escaped}["']\\s*[:=]\\s*(["'])((?:\\\\.|(?!\\1).)*)\\1`,
+    ).exec(line);
+    if (quotedPair?.[2] !== undefined) {
+      const value = quotedPair[2].replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+      if (value.length === record.length) return value;
+    }
+    const barePair = new RegExp(`["']?${escaped}["']?\\s*[:=]\\s*([^\\s,#]+)`).exec(line);
+    if (barePair?.[1] !== undefined && barePair[1].length === record.length) return barePair[1];
+  }
 
   for (const candidate of line.match(/[A-Za-z0-9_\-./+=:~]{8,}/g) ?? []) {
     if (candidate.length === record.length) return candidate;

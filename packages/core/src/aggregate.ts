@@ -7,11 +7,17 @@
  * across every tool so duplicates and conflicts become visible.
  */
 
-import { readFile } from 'node:fs/promises';
-
+import { createHash } from 'node:crypto';
 import { parseContent } from './parsers.js';
-import { detectSecretValue, isPlaceholderValue, isSecretKey } from './redact.js';
+import {
+  detectSecretValue,
+  isPlaceholderValue,
+  isSecretKey,
+  maskValue,
+  redactText,
+} from './redact.js';
 import type { DiscoveredFile, ScanResult } from './scanner.js';
+import { readRegularText } from './safe-file.js';
 import type { ConfigScope, FileFormat, FileKind } from './types.js';
 
 /** How an MCP client reaches a server. */
@@ -258,6 +264,8 @@ export async function aggregate(
       });
     }
 
+    if (file.hash === '') continue;
+
     const text = await load(file);
     if (text === undefined) continue;
 
@@ -406,7 +414,7 @@ export async function aggregate(
 
 async function defaultLoader(file: DiscoveredFile): Promise<string | undefined> {
   try {
-    return await readFile(file.path, 'utf8');
+    return await readRegularText(file.path, 8 * 1024 * 1024);
   } catch {
     return undefined;
   }
@@ -520,6 +528,11 @@ function buildDefinition(
     (isRecord(raw['metadata']) && raw['metadata']['disabled'] === true);
 
   const hasInlineSecret = containsSecretLiteral(raw);
+  const safeCommand = command === undefined ? undefined : maskInlineText(command);
+  const safeArgs = maskArguments(args);
+  const safeUrl = url === undefined ? undefined : maskUrl(url);
+  const safeReference = reference === undefined ? undefined : maskInlineText(reference);
+  const signature = signatureOf(transport, safeCommand, safeArgs, safeUrl, safeReference);
 
   return {
     fileId: file.id,
@@ -534,14 +547,14 @@ function buildDefinition(
         ? { projectRoot: file.projectRoot }
         : {}),
     transport,
-    ...(command !== undefined ? { command } : {}),
-    ...(args.length > 0 ? { args } : {}),
-    ...(url !== undefined ? { url } : {}),
-    ...(reference !== undefined ? { reference } : {}),
+    ...(safeCommand !== undefined ? { command: safeCommand } : {}),
+    ...(safeArgs.length > 0 ? { args: safeArgs } : {}),
+    ...(safeUrl !== undefined ? { url: safeUrl } : {}),
+    ...(safeReference !== undefined ? { reference: safeReference } : {}),
     envKeys,
     hasInlineSecret,
     disabled,
-    signature: signatureOf(transport, command, args, url, reference),
+    signature,
   };
 }
 
@@ -577,11 +590,59 @@ function signatureOf(
   url: string | undefined,
   reference: string | undefined,
 ): string {
+  let canonical: string;
   if (transport === 'stdio') {
-    if (!command && reference) return `ref|${reference}`;
-    return `stdio|${normalizeCommand(command)}|${args.join(' ')}`;
+    canonical =
+      !command && reference
+        ? `ref|${reference}`
+        : `stdio|${normalizeCommand(command)}|${args.join(' ')}`;
+  } else {
+    canonical = `${transport}|${(url ?? '').replace(/\/+$/, '')}`;
   }
-  return `${transport}|${(url ?? '').replace(/\/+$/, '')}`;
+  return `sha256:${createHash('sha256').update(canonical).digest('hex')}`;
+}
+
+function maskArguments(args: readonly string[]): string[] {
+  let previousIsSecretFlag = false;
+  return args.map((argument) => {
+    const equals = /^(--?[^=]+)=(.*)$/.exec(argument);
+    if (equals?.[1] !== undefined && equals[2] !== undefined && isSecretFlag(equals[1])) {
+      previousIsSecretFlag = false;
+      return `${equals[1]}=${maskValue(equals[2])}`;
+    }
+
+    if (previousIsSecretFlag) {
+      previousIsSecretFlag = false;
+      return isPlaceholderValue(argument) ? argument : maskValue(argument);
+    }
+
+    previousIsSecretFlag = isSecretFlag(argument);
+    return maskInlineText(argument);
+  });
+}
+
+function isSecretFlag(argument: string): boolean {
+  return isSecretKey(argument.replace(/^-+/, '').replace(/-/g, '_'));
+}
+
+function maskUrl(value: string): string {
+  try {
+    const url = new URL(value);
+    if (url.username.length > 0) url.username = maskValue(decodeURIComponent(url.username));
+    if (url.password.length > 0) url.password = maskValue(decodeURIComponent(url.password));
+    for (const [key, raw] of [...url.searchParams.entries()]) {
+      if (isSecretKey(key) || detectSecretValue(raw) !== undefined) {
+        url.searchParams.set(key, maskValue(raw));
+      }
+    }
+    return maskInlineText(url.toString());
+  } catch {
+    return maskInlineText(value);
+  }
+}
+
+function maskInlineText(value: string): string {
+  return redactText(value).value;
 }
 
 /** Strips directory and extension so `npx` and `/usr/bin/npx.cmd` match. */

@@ -1,4 +1,4 @@
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, mkdirSync, symlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
@@ -152,6 +152,28 @@ describe('writeConfigFile - refusals', () => {
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.code).toBe('hash-mismatch');
     expect(readFileSync(path, 'utf8')).toBe(VALID);
+  });
+
+  it.skipIf(process.platform === 'win32')('refuses to write through a symbolic link', async () => {
+    const outside = fixture.write('outside.json', VALID);
+    const path = join(fixture.home, '.cursor', 'mcp.json');
+    mkdirSync(join(fixture.home, '.cursor'), { recursive: true });
+    symlinkSync(outside, path);
+
+    const result = await writeConfigFile(
+      {
+        path,
+        content: '{}',
+        format: 'json',
+        sensitivity: 'normal',
+        expectedHash: hashContent(VALID),
+      },
+      { backupRoot },
+    );
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.code).toBe('write-failed');
+    expect(readFileSync(outside, 'utf8')).toBe(VALID);
   });
 });
 

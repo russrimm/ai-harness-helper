@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { aggregate } from '../src/aggregate.js';
@@ -220,6 +221,42 @@ describe('aggregate - duplicate and conflict detection', () => {
     const result = await inventory();
 
     expect(result.mcpServers.find((server) => server.name === 'gh')?.conflicting).toBe(false);
+  });
+
+  it('never surfaces inline credentials in definitions, signatures, or findings', async () => {
+    const argumentSecret = `ghp_${'S'.repeat(20)}`;
+    const querySecret = 'synthetic-query-secret-0001';
+    fixture.write(
+      '.claude/settings.json',
+      JSON.stringify({
+        mcpServers: {
+          github: {
+            command: 'npx',
+            args: ['server-github', '--api-key', argumentSecret],
+          },
+        },
+      }),
+    );
+    fixture.write(
+      '.cursor/mcp.json',
+      JSON.stringify({
+        mcpServers: {
+          github: { url: `https://mcp.example.test/sse?api_key=${querySecret}` },
+        },
+      }),
+    );
+
+    const result = await inventory();
+    const serialized = JSON.stringify(result);
+    expect(serialized).not.toContain(argumentSecret);
+    expect(serialized).not.toContain(querySecret);
+    expect(serialized).toContain('sha256:');
+    const rawCommitment = `sha256:${createHash('sha256')
+      .update(`http|https://mcp.example.test/sse?api_key=${querySecret}`)
+      .digest('hex')}`;
+    expect(
+      result.mcpServers.flatMap((server) => server.definitions).map((entry) => entry.signature),
+    ).not.toContain(rawCommitment);
   });
 
   it('treats the same executable reached by different paths as the same server', async () => {
@@ -509,6 +546,21 @@ describe('aggregate - credential stores', () => {
     const result = await inventory();
 
     expect(JSON.stringify(result)).not.toContain('sk-live-abcdefghij0123456789');
+  });
+
+  it('does not load files the scanner marked as too large', async () => {
+    fixture.write('.claude/settings.json', 'x'.repeat(2048));
+    const scanned = await scan({ environment: fixture.environment, maxFileBytes: 1024 });
+    const loaded: string[] = [];
+
+    await aggregate(scanned, {
+      loadContent: async (file) => {
+        loaded.push(file.path);
+        return 'should not be loaded';
+      },
+    });
+
+    expect(loaded).not.toContain(scanned.files.find((file) => file.hash === '')?.path);
   });
 });
 

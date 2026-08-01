@@ -1,4 +1,4 @@
-import { chmodSync, mkdirSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { groupByProvider, scan } from '../src/scanner.js';
@@ -285,6 +285,27 @@ describe('scan - resilience', () => {
     expect(file?.hash).toBe('');
     expect(result.problems.some((p) => p.code === 'too-large')).toBe(true);
   });
+
+  it('honours an already-aborted scan signal', async () => {
+    const controller = new AbortController();
+    controller.abort();
+    await expect(
+      scan({ environment: fixture.environment, signal: controller.signal }),
+    ).rejects.toMatchObject({ name: 'AbortError' });
+  });
+
+  it.skipIf(process.platform === 'win32')(
+    'does not follow a directly configured symlink',
+    async () => {
+      const outside = fixture.write('outside.json', samples.claudeSettings);
+      const target = join(fixture.home, '.claude', 'settings.json');
+      mkdirSync(join(fixture.home, '.claude'), { recursive: true });
+      symlinkSync(outside, target);
+
+      const result = await scan({ environment: fixture.environment });
+      expect(result.files.some((file) => file.path === target)).toBe(false);
+    },
+  );
 
   it.skipIf(process.platform === 'win32')(
     'reports an unreadable directory as a problem and keeps scanning',
