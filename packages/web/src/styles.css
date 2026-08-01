@@ -1285,3 +1285,222 @@ a.stat-card-link:focus-visible .stat-card-label {
 .source-row-absent {
   background: var(--color-bg-sunken);
 }
+
+/* ----- Skills & agents view ----- */
+
+.capability-layout {
+  display: grid;
+  grid-template-columns: minmax(240px, 320px) 1fr;
+  gap: var(--space-5);
+  align-items: start;
+}
+
+.capability-sidebar {
+  background: var(--color-bg-raised);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-3);
+  max-height: calc(100vh - 8rem);
+  overflow-y: auto;
+  position: sticky;
+  top: var(--space-3);
+  min-width: 0;
+}
+
+/* The sidebar is too narrow for the row layout the toolbar uses elsewhere, so
+   its controls stack instead of being squeezed onto one line. */
+.toolbar-stacked {
+  flex-direction: column;
+  align-items: stretch;
+  margin-bottom: var(--space-2);
+}
+
+/* The shared toolbar rule grows its search field along the main axis. Once
+   that axis is vertical the field grows in height, so the growth is reset. */
+.toolbar-stacked input[type='search'],
+.toolbar-stacked input[type='text'],
+.toolbar-stacked select {
+  flex: 0 0 auto;
+  min-width: 0;
+  width: 100%;
+}
+
+.capability-nav section {
+  margin-bottom: var(--space-3);
+}
+
+.capability-nav h3 {
+  margin: 0 0 var(--space-1);
+  font-size: 0.95rem;
+}
+
+.capability-nav-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.capability-nav-list a {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-decoration: none;
+  color: var(--color-text);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  font-size: 0.9rem;
+  overflow-wrap: anywhere;
+}
+
+.capability-nav-list a:hover {
+  background: var(--color-bg-sunken);
+}
+
+.capability-nav-list a.is-selected {
+  background: var(--color-accent);
+  color: var(--color-bg-raised);
+}
+
+.capability-nav-list a.is-selected .muted {
+  color: var(--color-bg-raised);
+}
+
+.capability-nav-name {
+  font-weight: 600;
+}
+
+/* Shortcuts for adding a tool the harness already uses somewhere else. */
+.capability-suggestions {
+  margin-top: var(--space-2);
+}
+
+.capability-suggestions .chip-list {
+  margin: var(--space-1) 0 0;
+  gap: var(--space-1);
+}
+
+.chip-button {
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.8rem;
+}
+
+.chip-button:hover {
+  color: var(--color-text);
+  border-style: solid;
+}
+
+.capability-detail {
+  min-width: 0;
+  background: var(--color-bg-raised);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+}
+
+.capability-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  gap: var(--space-3);
+  margin: var(--space-3) 0;
+}
+
+.capability-facts dt {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--color-text-muted);
+}
+
+.capability-facts dd {
+  margin: var(--space-1) 0 0;
+  overflow-wrap: anywhere;
+}
+
+.capability-fieldset {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+  margin: 0 0 var(--space-4);
+}
+
+.capability-fieldset legend {
+  font-weight: 600;
+  padding: 0 var(--space-1);
+}
+
+.field {
+  margin-bottom: var(--space-3);
+  min-width: 0;
+}
+
+.field label {
+  display: block;
+  font-weight: 600;
+  margin-bottom: var(--space-1);
+}
+
+.field input[type='text'],
+.field textarea {
+  width: 100%;
+  font: inherit;
+  padding: var(--space-2);
+  color: var(--color-text);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+
+.field textarea {
+  resize: vertical;
+}
+
+.field p {
+  margin: var(--space-1) 0 0;
+}
+
+.field-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: var(--space-3);
+}
+
+.capability-preview {
+  margin-top: var(--space-4);
+}
+
+.capability-raw-link {
+  font-size: 0.9rem;
+}
+
+.capability-change-table {
+  border-collapse: collapse;
+  width: 100%;
+  margin-bottom: var(--space-3);
+}
+
+.capability-change-table caption {
+  text-align: left;
+  font-weight: 600;
+  padding-bottom: var(--space-1);
+}
+
+.capability-change-table th,
+.capability-change-table td {
+  text-align: left;
+  vertical-align: top;
+  padding: var(--space-1) var(--space-2);
+  border-bottom: 1px solid var(--color-border);
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 900px) {
+  .capability-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .capability-sidebar {
+    position: static;
+    max-height: 360px;
+  }
+}

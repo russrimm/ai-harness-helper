@@ -27,6 +27,7 @@ export function CodeEditor({
   theme,
   onChange,
   ariaLabel,
+  height = '60vh',
 }: {
   value: string;
   language: EditorLanguage;
@@ -34,6 +35,11 @@ export function CodeEditor({
   theme: 'light' | 'dark';
   onChange?: (next: string) => void;
   ariaLabel: string;
+  /**
+   * Editor height. The default suits a whole config file; a caller showing a
+   * short excerpt can shrink it so the page is not mostly blank gutter.
+   */
+  height?: string;
 }): ReactElement {
   return (
     <div role="group" aria-label={ariaLabel}>
@@ -42,7 +48,7 @@ export function CodeEditor({
         theme={theme}
         readOnly={readOnly}
         editable={!readOnly}
-        height="60vh"
+        height={height}
         extensions={[...extensionsFor(language), EditorView.lineWrapping]}
         onChange={onChange}
         basicSetup={{ foldGutter: true, highlightActiveLine: !readOnly }}
