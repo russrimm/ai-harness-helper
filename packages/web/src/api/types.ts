@@ -435,3 +435,72 @@ export interface HealthResponse {
   ok: boolean;
   readOnly: boolean;
 }
+
+/* ------------------------------------------------- Skills & agents editor -- */
+
+/** Capability kinds the structured editor can open. */
+export type EditableCapabilityKind = 'agent' | 'skill' | 'command' | 'prompt' | 'chatmode';
+
+export interface CapabilitySummary {
+  fileId: string;
+  kind: EditableCapabilityKind;
+  name: string;
+  description?: string;
+  model?: string;
+  version?: string;
+  tools: string[];
+  providerId: string;
+  providerName: string;
+  locationLabel: string;
+  scope: ConfigScope;
+  fileName: string;
+  directory: string;
+  displayPath: string;
+  projectRoot?: string;
+  size: number;
+  modified: string;
+  editable: boolean;
+  notEditableReason?: string;
+  malformed: boolean;
+}
+
+export interface CapabilityListResponse {
+  capabilities: CapabilitySummary[];
+  knownModels: string[];
+  knownTools: string[];
+  readOnly: boolean;
+}
+
+export interface CapabilityFields {
+  name?: string;
+  description?: string;
+  model?: string;
+  version?: string;
+  tools?: string[];
+}
+
+export interface CapabilityDocument {
+  file: DiscoveredFile;
+  kind: EditableCapabilityKind;
+  fields: CapabilityFields;
+  body: string;
+  content: string;
+  revealed: boolean;
+  redactions: RedactionRecord[];
+  hasFrontmatter: boolean;
+  extraKeys: string[];
+  hash: string;
+  issues: ParseIssue[];
+  readOnly: boolean;
+  readOnlyReason?: string;
+}
+
+/** A structured edit. Omitted fields are left exactly as they are on disk. */
+export interface CapabilityEdit {
+  name?: string;
+  description?: string;
+  model?: string;
+  version?: string;
+  tools?: string[];
+  body?: string;
+}

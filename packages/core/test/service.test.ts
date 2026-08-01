@@ -20,6 +20,7 @@ beforeEach(() => {
   fixture.write('.claude/settings.json', samples.claudeSettings);
   fixture.write('.claude/CLAUDE.md', samples.claudeMd);
   fixture.write('.claude/agents/reviewer.md', samples.agentFile);
+  fixture.write('.claude/skills/pdf-extractor/SKILL.md', samples.skillFile);
   fixture.write('.claude/.credentials.json', '{"claudeAiOauth":{"accessToken":"sk-ant-secret"}}');
   fixture.write('.cursor/mcp.json', samples.claudeMcp);
   fixture.writeProject('AGENTS.md', samples.agentsMd);
@@ -306,6 +307,160 @@ describe('removing an MCP server', () => {
     const harness = service();
     await harness.getScan();
     expect(await harness.removeMcpServer('nope', 'github')).toBeUndefined();
+  });
+});
+
+describe('capabilities', () => {
+  async function capability(harness: HarnessService, name: string) {
+    const list = await harness.listCapabilities();
+    const entry = list.capabilities.find((item) => item.name === name);
+    if (!entry) throw new Error(`fixture missing capability ${name}`);
+    return entry;
+  }
+
+  /** Loads a capability for editing and returns what a save needs. */
+  async function open(harness: HarnessService, name: string) {
+    const entry = await capability(harness, name);
+    const document = await harness.getCapabilityDocument(entry.fileId, true);
+    if (!document) throw new Error(`capability ${name} could not be opened`);
+    return { id: entry.fileId, path: document.file.path, hash: document.hash, document };
+  }
+
+  it('lists agents and skills with their declared metadata', async () => {
+    const list = await service().listCapabilities();
+    const names = list.capabilities.map((entry) => entry.name);
+
+    expect(names).toContain('reviewer');
+    expect(names).toContain('pdf-extractor');
+    expect(list.readOnly).toBe(false);
+
+    const skill = list.capabilities.find((entry) => entry.name === 'pdf-extractor');
+    expect(skill?.kind).toBe('skill');
+    expect(skill?.model).toBe('claude-opus-4.5');
+    expect(skill?.version).toBe('1.2.0');
+    expect(skill?.tools).toEqual(['read', 'bash']);
+    expect(skill?.editable).toBe(true);
+  });
+
+  it('aggregates the models and tools already in use', async () => {
+    const list = await service().listCapabilities();
+
+    expect(list.knownModels).toContain('claude-opus-4.5');
+    expect(list.knownTools).toEqual(expect.arrayContaining(['bash', 'grep', 'read']));
+  });
+
+  it('never lists a credential store', async () => {
+    const list = await service().listCapabilities();
+    expect(list.capabilities.every((entry) => !entry.fileName.includes('credentials'))).toBe(true);
+  });
+
+  it('marks everything read-only when the session is', async () => {
+    const list = await service({ readOnly: true }).listCapabilities();
+
+    expect(list.readOnly).toBe(true);
+    expect(list.capabilities.every((entry) => !entry.editable)).toBe(true);
+  });
+
+  it('falls back to the folder name for a file named SKILL.md', async () => {
+    fixture.write('.claude/skills/csv-loader/SKILL.md', '# CSV loader\n');
+    const list = await service().listCapabilities();
+
+    expect(list.capabilities.map((entry) => entry.name)).toContain('csv-loader');
+  });
+
+  it('opens a capability masked, and revealed on request', async () => {
+    const harness = service();
+    const entry = await capability(harness, 'pdf-extractor');
+
+    const masked = await harness.getCapabilityDocument(entry.fileId);
+    expect(masked?.fields.name).toBe('pdf-extractor');
+    expect(masked?.fields.tools).toEqual(['read', 'bash']);
+    expect(masked?.extraKeys).toEqual(['license']);
+    expect(masked?.hasFrontmatter).toBe(true);
+    expect(masked?.revealed).toBe(false);
+
+    const revealed = await harness.getCapabilityDocument(entry.fileId, true);
+    expect(revealed?.revealed).toBe(true);
+    expect(revealed?.body).toContain('pdftotext');
+  });
+
+  it('returns undefined for a file that is not a capability', async () => {
+    const harness = service();
+    const scan = await harness.getScan();
+    const settings = scan.files.find((file) =>
+      file.path.replace(/\\/g, '/').endsWith('.claude/settings.json'),
+    );
+
+    expect(await harness.getCapabilityDocument(settings?.id ?? '')).toBeUndefined();
+    expect(
+      await harness.writeCapabilityDocument(settings?.id ?? '', { name: 'x' }, 'hash'),
+    ).toBeUndefined();
+  });
+
+  it('applies a field edit while preserving unmodelled front matter', async () => {
+    const harness = service();
+    const { id, path, hash } = await open(harness, 'pdf-extractor');
+
+    const outcome = await harness.writeCapabilityDocument(
+      id,
+      { name: 'pdf-reader', model: 'gpt-5', tools: ['read'] },
+      hash,
+    );
+
+    expect(outcome?.ok).toBe(true);
+    if (outcome?.ok) expect(outcome.backupPath).toBeTruthy();
+
+    const text = readFileSync(path, 'utf8');
+    expect(text).toContain('name: pdf-reader');
+    expect(text).toContain('model: gpt-5');
+    expect(text).toContain('license: Apache-2.0');
+    expect(text).toContain('pdftotext');
+    expect(text).not.toContain('- bash');
+  });
+
+  it('deletes a key when the field is cleared', async () => {
+    const harness = service();
+    const { id, path, hash } = await open(harness, 'pdf-extractor');
+
+    const outcome = await harness.writeCapabilityDocument(id, { version: '' }, hash);
+
+    expect(outcome?.ok).toBe(true);
+    expect(readFileSync(path, 'utf8')).not.toContain('version:');
+  });
+
+  it('rejects a stale hash', async () => {
+    const harness = service();
+    const { id, path } = await open(harness, 'pdf-extractor');
+    const before = readFileSync(path, 'utf8');
+
+    const outcome = await harness.writeCapabilityDocument(id, { name: 'renamed' }, 'stale-hash');
+
+    expect(outcome?.ok).toBe(false);
+    if (outcome && !outcome.ok) expect(outcome.code).toBe('hash-mismatch');
+    expect(readFileSync(path, 'utf8')).toBe(before);
+  });
+
+  it('refuses a structured edit in read-only mode', async () => {
+    const harness = service({ readOnly: true });
+    const { id, path, hash } = await open(harness, 'pdf-extractor');
+    const before = readFileSync(path, 'utf8');
+
+    const outcome = await harness.writeCapabilityDocument(id, { name: 'renamed' }, hash);
+
+    expect(outcome?.ok).toBe(false);
+    if (outcome && !outcome.ok) expect(outcome.code).toBe('read-only');
+    expect(readFileSync(path, 'utf8')).toBe(before);
+  });
+
+  it('refuses to write a masked value back into a file', async () => {
+    const harness = service();
+    const { id, path, hash } = await open(harness, 'pdf-extractor');
+
+    const outcome = await harness.writeCapabilityDocument(id, { description: '••••••••' }, hash);
+
+    expect(outcome?.ok).toBe(false);
+    if (outcome && !outcome.ok) expect(outcome.code).toBe('invalid-content');
+    expect(readFileSync(path, 'utf8')).toContain('Extracts text and tables');
   });
 });
 

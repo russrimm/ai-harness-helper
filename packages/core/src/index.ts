@@ -5,6 +5,7 @@ export * from './parsers.js';
 export * from './redact.js';
 export * from './scanner.js';
 export * from './aggregate.js';
+export * from './capability-doc.js';
 export * from './overlap.js';
 export * from './mcp-edit.js';
 export * from './writer.js';

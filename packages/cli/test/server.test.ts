@@ -56,6 +56,7 @@ beforeEach(async () => {
   fixture.write('.claude/settings.json', samples.claudeSettings);
   fixture.write('.claude/CLAUDE.md', samples.claudeMd);
   fixture.write('.claude/.credentials.json', '{"claudeAiOauth":{"accessToken":"sk-ant-secret"}}');
+  fixture.write('.claude/skills/pdf-extractor/SKILL.md', samples.skillFile);
   fixture.write('.cursor/mcp.json', samples.claudeMcp);
   fixture.writeProject('AGENTS.md', samples.agentsMd);
   await start();
@@ -419,6 +420,150 @@ describe('removing an MCP server', () => {
       token: null,
     });
     expect(response.statusCode).toBe(401);
+  });
+});
+
+describe('capability routes', () => {
+  interface CapabilityListBody {
+    capabilities: { fileId: string; name: string; kind: string; model?: string }[];
+    knownModels: string[];
+    readOnly: boolean;
+  }
+
+  async function skill() {
+    const list = (await call({ url: '/api/capabilities' })).json() as CapabilityListBody;
+    const entry = list.capabilities.find((item) => item.name === 'pdf-extractor');
+    if (!entry) throw new Error('fixture missing pdf-extractor');
+
+    const document = (
+      await call({ url: `/api/capabilities/${entry.fileId}?reveal=true` })
+    ).json() as { hash: string; file: { path: string } };
+
+    return { id: entry.fileId, hash: document.hash, path: document.file.path };
+  }
+
+  it('requires a token', async () => {
+    expect((await call({ url: '/api/capabilities', token: null })).statusCode).toBe(401);
+  });
+
+  it('lists capabilities with the models already in use', async () => {
+    const response = await call({ url: '/api/capabilities' });
+    expect(response.statusCode).toBe(200);
+
+    const body = response.json() as CapabilityListBody;
+    expect(body.capabilities.map((entry) => entry.name)).toContain('pdf-extractor');
+    expect(body.knownModels).toContain('claude-opus-4.5');
+    expect(body.readOnly).toBe(false);
+  });
+
+  it('returns fields and a body, revealed only when asked', async () => {
+    const list = (await call({ url: '/api/capabilities' })).json() as CapabilityListBody;
+    const id = list.capabilities.find((entry) => entry.name === 'pdf-extractor')?.fileId ?? '';
+
+    const masked = (await call({ url: `/api/capabilities/${id}` })).json() as {
+      fields: { name?: string; tools?: string[] };
+      extraKeys: string[];
+      revealed: boolean;
+    };
+    expect(masked.fields.name).toBe('pdf-extractor');
+    expect(masked.fields.tools).toEqual(['read', 'bash']);
+    expect(masked.extraKeys).toEqual(['license']);
+    expect(masked.revealed).toBe(false);
+
+    const revealed = (await call({ url: `/api/capabilities/${id}?reveal=true` })).json() as {
+      revealed: boolean;
+    };
+    expect(revealed.revealed).toBe(true);
+  });
+
+  it('404s for a file that is not a capability', async () => {
+    const id = await firstFileId('.claude/settings.json');
+    expect((await call({ url: `/api/capabilities/${id}` })).statusCode).toBe(404);
+    expect(
+      (
+        await call({
+          method: 'PUT',
+          url: `/api/capabilities/${id}`,
+          payload: { expectedHash: 'x', name: 'nope' },
+        })
+      ).statusCode,
+    ).toBe(404);
+  });
+
+  it('saves a field edit and preserves unmodelled front matter', async () => {
+    const { id, hash, path } = await skill();
+
+    const response = await call({
+      method: 'PUT',
+      url: `/api/capabilities/${id}`,
+      payload: { expectedHash: hash, name: 'pdf-reader', model: 'gpt-5', tools: ['read'] },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect((response.json() as { ok: boolean; backupPath: string }).backupPath).toBeTruthy();
+
+    const text = readFileSync(path, 'utf8');
+    expect(text).toContain('name: pdf-reader');
+    expect(text).toContain('model: gpt-5');
+    expect(text).toContain('license: Apache-2.0');
+  });
+
+  it('400s on a missing hash or a mistyped field', async () => {
+    const { id, hash } = await skill();
+
+    expect(
+      (await call({ method: 'PUT', url: `/api/capabilities/${id}`, payload: { name: 'x' } }))
+        .statusCode,
+    ).toBe(400);
+
+    expect(
+      (
+        await call({
+          method: 'PUT',
+          url: `/api/capabilities/${id}`,
+          payload: { expectedHash: hash, name: 42 },
+        })
+      ).statusCode,
+    ).toBe(400);
+
+    expect(
+      (
+        await call({
+          method: 'PUT',
+          url: `/api/capabilities/${id}`,
+          payload: { expectedHash: hash, tools: 'read' },
+        })
+      ).statusCode,
+    ).toBe(400);
+  });
+
+  it('409s on a stale hash', async () => {
+    const { id, path } = await skill();
+    const before = readFileSync(path, 'utf8');
+
+    const response = await call({
+      method: 'PUT',
+      url: `/api/capabilities/${id}`,
+      payload: { expectedHash: 'stale', name: 'renamed' },
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(readFileSync(path, 'utf8')).toBe(before);
+  });
+
+  it('403s every capability write in read-only mode', async () => {
+    const { id } = await skill();
+    await app.close();
+    await start({ readOnly: true });
+
+    const response = await call({
+      method: 'PUT',
+      url: `/api/capabilities/${id}`,
+      payload: { expectedHash: 'x', name: 'renamed' },
+    });
+
+    expect(response.statusCode).toBe(403);
+    expect((response.json() as { code: string }).code).toBe('read-only');
   });
 });
 

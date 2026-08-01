@@ -7,6 +7,9 @@
  */
 
 import type {
+  CapabilityDocument,
+  CapabilityEdit,
+  CapabilityListResponse,
   FileDocument,
   HarnessInventory,
   HealthResponse,
@@ -204,6 +207,46 @@ export async function putFile(
       'x-harness-token': token,
     },
     body: JSON.stringify({ content, expectedHash }),
+  });
+  const body = await readJson(response);
+  return body as WriteOutcome;
+}
+
+/** Lists every agent, skill, prompt, command, and chat mode found on this machine. */
+export function getCapabilities(): Promise<CapabilityListResponse> {
+  return request('/api/capabilities');
+}
+
+/**
+ * Loads one capability as structured fields plus a body.
+ *
+ * `reveal` follows the same contract as {@link getFile}: the form is populated
+ * from a masked copy for reading, and only entering edit mode asks for the
+ * real text — saving a masked body would write the mask into the user's own
+ * instructions.
+ */
+export function getCapability(id: string, reveal = false): Promise<CapabilityDocument> {
+  const query = reveal ? '?reveal=true' : '';
+  return request(`/api/capabilities/${encodeURIComponent(id)}${query}`);
+}
+
+/**
+ * Applies a structured edit. Like {@link putFile} this returns its refusal
+ * shape rather than throwing, because a stale-hash conflict is an outcome the
+ * user has to be shown, not a transport failure.
+ */
+export async function putCapability(
+  id: string,
+  edit: CapabilityEdit,
+  expectedHash: string,
+): Promise<WriteOutcome> {
+  const response = await fetchOrThrow(`/api/capabilities/${encodeURIComponent(id)}`, {
+    method: 'PUT',
+    headers: {
+      'content-type': 'application/json',
+      'x-harness-token': token,
+    },
+    body: JSON.stringify({ ...edit, expectedHash }),
   });
   const body = await readJson(response);
   return body as WriteOutcome;

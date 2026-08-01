@@ -42,6 +42,11 @@ there is no telemetry, and the tool makes no outbound network requests at all.
   your agents, skills, prompts, chat modes, commands, permission rules, hooks
   and ignore files. Every row shows the tool, location, directory and file it
   came from, and is flagged if something else declares the same thing.
+- **Skills & agents** — a form editor for the capability files themselves.
+  Rename a skill, point an agent at a different model, bump its version, change
+  its tool allowlist, or rewrite its instructions, without hand-editing YAML.
+  Front-matter keys this build does not model are preserved exactly where they
+  sit, and every change is confirmed field by field before it is written.
 - **Search** — full-text across everything discovered, honoring redaction.
 - **Export** — the whole harness as JSON or a Markdown report, including the
   source map and duplicate flags. Metadata only, with credentials masked, so it
@@ -197,6 +202,16 @@ through the same chain:
 The editor is always given the **unmasked** document. Handing an editor masked
 text and saving it would write the mask into your real configuration,
 destroying the credentials the masking was protecting.
+
+Structured edits from the **Skills & agents** form go through the same chain,
+with two additions. The merge happens on the server against the bytes currently
+on disk, so front matter the browser never saw cannot be dropped or reordered
+by it. And a save is rejected if it would write a masked placeholder into a
+file that did not already contain one.
+
+Clearing a field removes the key rather than writing an empty value: several
+tools read `model: ''` as a request for a model literally named the empty
+string.
 
 ## Development
 

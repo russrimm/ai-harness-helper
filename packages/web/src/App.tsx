@@ -7,6 +7,7 @@ import { useAsync } from './hooks/useAsync.js';
 import { splitFirstSegment, useHashLocation } from './hooks/useHashLocation.js';
 import { useTheme } from './hooks/useTheme.js';
 import { ExportView } from './views/ExportView.js';
+import { CapabilitiesView } from './views/CapabilitiesView.js';
 import { FilesView } from './views/FilesView.js';
 import { InstructionsView } from './views/InstructionsView.js';
 import { McpView } from './views/McpView.js';
@@ -14,7 +15,16 @@ import { OverviewView } from './views/OverviewView.js';
 import { SearchView } from './views/SearchView.js';
 import { SourcesView } from './views/SourcesView.js';
 
-const KNOWN_BASES = ['/', '/sources', '/files', '/mcp', '/instructions', '/search', '/export'];
+const KNOWN_BASES = [
+  '/',
+  '/sources',
+  '/files',
+  '/mcp',
+  '/capabilities',
+  '/instructions',
+  '/search',
+  '/export',
+];
 
 export function App(): ReactElement {
   const location = useHashLocation();
@@ -47,6 +57,7 @@ export function App(): ReactElement {
           {base === '/sources' ? <SourcesView /> : null}
           {base === '/files' ? <FilesView initialFileId={rest} /> : null}
           {base === '/mcp' ? <McpView /> : null}
+          {base === '/capabilities' ? <CapabilitiesView initialFileId={rest} /> : null}
           {base === '/instructions' ? <InstructionsView /> : null}
           {base === '/search' ? <SearchView initialQuery={location.params.get('q') ?? ''} /> : null}
           {base === '/export' ? <ExportView /> : null}

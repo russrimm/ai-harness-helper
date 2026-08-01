@@ -5,6 +5,7 @@ const LINKS: Array<{ path: string; label: string }> = [
   { path: '/sources', label: 'Sources' },
   { path: '/files', label: 'Files' },
   { path: '/mcp', label: 'MCP' },
+  { path: '/capabilities', label: 'Skills & agents' },
   { path: '/instructions', label: 'Instructions' },
   { path: '/search', label: 'Search' },
   { path: '/export', label: 'Export' },
