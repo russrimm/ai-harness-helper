@@ -10,23 +10,28 @@ agentic harness actually configured to do?** Duplicate and conflicting MCP
 servers, stale instruction files, and forgotten permission rules go unnoticed
 because there is no single place to look.
 
-AI Harness Helper finds every one of those files, parses them, and shows you
-the whole picture in one browsable, searchable, editable view.
+AI Harness Helper is an **implementation preview** of a local discovery engine
+and authenticated loopback API for those files. The core scanner, parsers,
+inventory, redaction, safe writer, CLI, and HTTP API are implemented. The React
+package currently contains only a placeholder shell, so the browsable editor
+described below is the intended product rather than a shipped UI.
 
 ```bash
-npx ai-harness-helper
+npm install
+npm run build
+npm start -- --no-open
 ```
 
-That scans your machine and opens a local browser UI. Nothing is uploaded,
-there is no telemetry, and the tool makes no outbound network requests at all.
+That scans your machine and starts the local API. Nothing is uploaded, there is
+no telemetry, and the tool makes no outbound network requests at all.
 
-## What you get
+## Implemented API capabilities
 
 - **Overview** — every tool detected, every file found, and health findings:
   duplicate MCP servers, conflicting definitions, plaintext secrets, empty or
   unparseable files, and deprecated config locations.
-- **Files** — a tree grouped by tool and scope, with a syntax-highlighted
-  viewer. Secrets are masked by default; you reveal one value at a time.
+- **Files** — a tree grouped by tool and scope. File responses mask secrets by
+  default and support per-value reveal.
 - **MCP servers** — every server from every tool in one table, showing which
   tools define it and where the definitions disagree.
 - **Instructions and capabilities** — CLAUDE.md, AGENTS.md,
@@ -35,13 +40,14 @@ there is no telemetry, and the tool makes no outbound network requests at all.
 - **Search** — full-text across everything discovered, honoring redaction.
 - **Export** — the whole harness as JSON or a Markdown report.
 
-You can also **edit** any config file in place, with backups, validation, and
-conflict detection.
+Authenticated API clients can also edit discovered config files in place, with
+backups, validation, and conflict detection. A complete browser client for
+these capabilities is not yet implemented.
 
 ## Usage
 
 ```bash
-npx ai-harness-helper [options]
+npm start -- [options]
 ```
 
 | Option                  | Description                                                   |
@@ -57,7 +63,7 @@ Global and user-level configuration is scanned automatically. Project
 configuration is **opt-in** — the tool never crawls your whole drive:
 
 ```bash
-npx ai-harness-helper --project ~/code/my-app --project ~/code/other-app
+npm start -- --project ~/code/my-app --project ~/code/other-app
 ```
 
 ## Supported tools
@@ -94,9 +100,10 @@ This tool reads highly sensitive local files, so that is treated as a
 first-class design constraint rather than an afterthought.
 
 - The server binds `127.0.0.1` only, never `0.0.0.0`.
-- Every API call requires a token generated fresh on each run and passed in
-  the URL the tool opens. This blocks other local processes and DNS-rebinding
-  attacks. `Origin` and `Host` are validated too.
+- Every sensitive API call requires a token generated fresh on each run.
+  `Origin` and `Host` are validated to block cross-origin browser requests and
+  DNS rebinding. The token is not a security boundary against a malicious
+  process already running as the same OS user.
 - **Path allowlist**: the API will only read or write files the scanner
   actually discovered. Nothing else is ever in the authorized set, so
   traversal is structurally impossible rather than filtered.
@@ -104,7 +111,8 @@ first-class design constraint rather than an afterthought.
   (`token`, `apiKey`, `password`, `authorization`) or the value matches a
   known credential shape (`sk-`, `ghp_`, `github_pat_`, `AKIA`, `xox[bpsa]-`,
   JWTs, PEM blocks). Templated values like `${input:api-key}` are recognized
-  and left alone. Revealing is per-value, explicit, and never persisted.
+  and left alone. Masked views support per-value reveal. The authenticated raw
+  document response used for editing exposes the complete file to its caller.
 - **Credential stores are never rendered.** `~/.codex/auth.json`,
   `~/.claude/.credentials.json`, and `~/.docker/config.json` are listed as
   present, with metadata only. Editing them is blocked outright.
@@ -127,9 +135,10 @@ through the same chain:
 5. A timestamped backup is written to `~/.ai-harness-helper/backups/`.
 6. The file is replaced atomically via a temporary file and rename.
 
-The editor is always given the **unmasked** document. Handing an editor masked
-text and saving it would write the mask into your real configuration,
-destroying the credentials the masking was protecting.
+An editor must use the authenticated **unmasked** document response. Saving
+masked text would write the mask into the real configuration and destroy the
+credentials it was protecting. The browser editor itself is not implemented
+yet.
 
 ## Development
 
@@ -156,7 +165,8 @@ The repository is an npm workspaces monorepo:
   parsers, redactor, aggregator, writer. No network, no server, fully unit
   tested against a synthetic fixture home.
 - `packages/cli` — the Fastify API and the `ai-harness-helper` binary.
-- `packages/web` — the React browser UI. Never touches the filesystem.
+- `packages/web` — a placeholder React shell for the planned browser UI. It
+  never touches the filesystem directly.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for review expectations and
 [BACKLOG.md](BACKLOG.md) for open decisions.

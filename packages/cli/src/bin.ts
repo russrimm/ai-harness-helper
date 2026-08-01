@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * `ai-harness-helper` — scans this machine for agentic-tool configuration and
- * opens a local browser UI showing the whole harness in one place.
+ * starts a local API for inspecting the discovered harness.
  */
 
 import { spawn } from 'node:child_process';
@@ -30,7 +30,7 @@ const USAGE = `
 ai-harness-helper — see every agentic-tool config on this machine
 
 Usage
-  npx ai-harness-helper [options]
+  ai-harness-helper [options]
 
 Options
   -p, --port <number>    Port to listen on. Defaults to the first free port from 7777.

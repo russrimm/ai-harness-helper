@@ -7,6 +7,8 @@ readonly required_files=(
   "BACKLOG.md"
   "CONTRIBUTING.md"
   "SECURITY.md"
+  "package.json"
+  "package-lock.json"
 )
 
 errors=0
@@ -28,10 +30,17 @@ require_content() {
   fi
 }
 
-require_content "README.md" "discovery-stage repository"
-require_content "BACKLOG.md" "## P0 - Decisions required before implementation"
+require_content "README.md" "# AI Harness Helper"
+require_content "BACKLOG.md" "## P0 - Decisions still required"
 require_content "CONTRIBUTING.md" "## Before writing code"
 require_content "SECURITY.md" "## Reporting a vulnerability"
+require_content "package.json" "\"workspaces\""
+
+tracked_files="$(mktemp)"
+trap 'rm -f "$tracked_files"' EXIT
+if ! git ls-files --cached --others --exclude-standard -z >"$tracked_files" 2>/dev/null; then
+  find . -path './.git' -prune -o -path './node_modules' -prune -o -type f -print0 >"$tracked_files"
+fi
 
 while IFS= read -r -d '' file; do
   [[ -f "$file" ]] || continue
@@ -39,7 +48,7 @@ while IFS= read -r -d '' file; do
     printf 'Trailing whitespace found in: %s\n' "$file" >&2
     errors=1
   fi
-done < <(git ls-files --cached --others --exclude-standard -z)
+done <"$tracked_files"
 
 if (( errors != 0 )); then
   exit 1

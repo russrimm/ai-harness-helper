@@ -19,8 +19,9 @@ permission rules go unnoticed.
 
 **Workflows:**
 
-1. _See everything._ Run `npx ai-harness-helper`; every discovered file appears
-   grouped by tool and scope, with contents rendered and secrets masked.
+1. _See everything._ Run the locally built CLI; every discovered file is
+   available through the authenticated API, grouped by tool and scope, with
+   contents masked by default.
    Failure case: an unparseable or unreadable file is shown with an
    explanation rather than dropped.
 2. _Reconcile MCP servers._ One table lists every server from every tool, with
@@ -39,16 +40,16 @@ outbound network access, any telemetry, and managing or launching MCP servers.
 
 ### P0.2 Interaction model and runtime — RESOLVED
 
-A CLI (`npx ai-harness-helper`) that scans, starts a loopback server, and opens
-a browser UI. A pure CLI cannot render a whole harness legibly, and a
+A CLI that scans and starts a loopback API, with a planned browser UI. A pure
+CLI cannot render a whole harness legibly, and a
 persistent service is the wrong trust posture for something reading
 credentials.
 
 - **Runtime:** TypeScript on Node.js 20.11+.
 - **Stack:** Fastify API, React + Vite UI, npm workspaces monorepo.
 - **Platforms:** Windows, macOS, and Linux from v1.
-- **Install/update/remove:** none — `npx` runs the current version and leaves
-  nothing behind except backups the user creates by editing.
+- **Distribution:** unresolved. The package is private and no license has been
+  selected, so `npx ai-harness-helper` is not currently a valid install path.
 
 ### P0.3 AI and data boundary — RESOLVED
 
@@ -59,19 +60,22 @@ renders it.
   project roots the user explicitly registers.
 - **Egress:** none. No telemetry, no outbound network access, loopback-only
   listener.
-- **Credentials:** never loaded. Credential stores are listed with metadata
-  only and are never rendered or editable. Other secrets are masked by default
-  by key name and value shape, revealed only per-value on explicit request,
-  and never cached, persisted, or logged.
+- **Credentials:** dedicated credential stores are listed with metadata only
+  and are never rendered or editable. Config files that embed credentials are
+  loaded locally, masked by default, and available in full only through
+  authenticated reveal/edit responses. They are never intentionally logged or
+  sent off-machine.
 - **Retention:** nothing is stored except timestamped backups the user's own
   edits create, under `~/.ai-harness-helper/backups/`.
 - **Threat model:** documented in [SECURITY.md](SECURITY.md). Prompt injection
   is out of scope because no content is ever sent to a model; config files are
   parsed as data and rendered as text, never executed.
 
-### P1.1 First end-to-end workflow — RESOLVED
+### P1.1 First end-to-end workflow — PARTIAL
 
-Implemented and verified against a real machine as well as synthetic fixtures.
+The scan, inventory, redaction, write, CLI, and HTTP boundaries are implemented
+and covered by synthetic fixtures. The React package is still a placeholder,
+so the documented browser workflow is not end to end.
 
 ### P1.2 CI for the selected stack — RESOLVED
 
@@ -141,9 +145,9 @@ exists.
 
 ### P2.2 Verify user experience and accessibility
 
-**Evidence:** the UI targets WCAG 2.2 AA with keyboard operation, semantic
-markup, and a light/dark theme, but this has not been verified with assistive
-technology.
+**Evidence:** `packages/web/src/App.tsx` is a three-line placeholder. There is
+no implemented navigation, editor, responsive interaction, or meaningful
+accessibility surface to verify yet.
 
 **Acceptance criteria:**
 

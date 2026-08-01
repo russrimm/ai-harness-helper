@@ -44,11 +44,11 @@ machine, so the design assumes an attacker already has some local foothold.
 
 ### What is in scope
 
-**Another local process reading your secrets through the API.**
+**Unauthenticated local requests reading secrets through the API.**
 The server binds `127.0.0.1` only and requires a token generated fresh on each
-run, delivered in the URL the tool opens. A process that cannot read that URL
-cannot call the API. Tokens are 256 bits of entropy and compared in constant
-time.
+run. Tokens are 256 bits of entropy and compared in constant time. This
+prevents accidental or opportunistic unauthenticated access; it does not
+isolate the API from a malicious process running as the same OS user.
 
 **A malicious web page driving the API from your browser.**
 `Origin` is validated, so a page on the internet cannot issue authenticated
@@ -63,8 +63,9 @@ or a symlink cannot reach a file outside the discovered set, because nothing
 outside it is ever in the set.
 
 **Accidental secret disclosure through the UI.**
-Values are masked by default, both by key name and by value shape. Revealing
-is per-value, requires an explicit action, and is never cached or persisted.
+Values are masked by default, both by key name and by value shape. Masked views
+support per-value reveal. Editing requires an authenticated raw-document
+response containing the complete file; clients must treat it as sensitive.
 Search redacts before matching, so a query cannot be used as an oracle to
 confirm a secret one character at a time.
 
@@ -89,6 +90,9 @@ would write the mask into the real file.
   surface, `npm audit` in CI, and SHA-pinned GitHub Actions, but not
   eliminated.
 - Physical access to an unlocked machine.
+- A malicious process already running as the same OS user. It can generally
+  read the same files directly and may be able to observe process or browser
+  state containing the API token.
 
 ### Data handling
 
