@@ -33,6 +33,7 @@ export interface DiscoveredFile {
   id: string;
   path: string;
   displayPath: string;
+  directory: string;
   name: string;
   providerId: string;
   providerName: string;
@@ -128,13 +129,29 @@ export interface FileDocument {
 
 export type McpTransport = 'stdio' | 'http' | 'sse' | 'websocket' | 'unknown';
 
-export interface McpDefinition {
+/** Where a declaration came from. Carried on every synthesized entry. */
+export interface EntryProvenance {
   fileId: string;
   filePath: string;
   displayPath: string;
+  directory: string;
+  fileName: string;
   providerId: string;
   providerName: string;
+  locationLabel: string;
   scope: ConfigScope;
+}
+
+export interface DuplicateInfo {
+  key: string;
+  duplicated: boolean;
+  conflicting: boolean;
+  siblingFileIds: string[];
+  siblingDisplayPaths: string[];
+  identicalFileIds: string[];
+}
+
+export interface McpDefinition extends EntryProvenance {
   projectRoot?: string;
   transport: McpTransport;
   command?: string;
@@ -151,16 +168,12 @@ export interface McpServerEntry {
   name: string;
   definitions: McpDefinition[];
   providerIds: string[];
+  directories: string[];
   conflicting: boolean;
   duplicated: boolean;
 }
 
-export interface InstructionEntry {
-  fileId: string;
-  displayPath: string;
-  providerId: string;
-  providerName: string;
-  scope: ConfigScope;
+export interface InstructionEntry extends EntryProvenance {
   projectRoot?: string;
   title: string;
   description?: string;
@@ -168,37 +181,32 @@ export interface InstructionEntry {
   bytes: number;
   lineCount: number;
   precedence: number;
+  duplicate: DuplicateInfo;
 }
 
 export type CapabilityKind = 'agent' | 'skill' | 'command' | 'prompt' | 'chatmode';
 
-export interface CapabilityEntry {
-  fileId: string;
-  displayPath: string;
-  providerId: string;
-  providerName: string;
-  scope: ConfigScope;
+export interface CapabilityEntry extends EntryProvenance {
   kind: CapabilityKind;
   name: string;
   description?: string;
   tools?: string[];
   model?: string;
+  projectRoot?: string;
+  duplicate: DuplicateInfo;
 }
 
 export type GuardrailKind = 'permissions' | 'ignore' | 'settings';
 
-export interface GuardrailEntry {
-  fileId: string;
-  displayPath: string;
-  providerId: string;
-  providerName: string;
-  scope: ConfigScope;
+export interface GuardrailEntry extends EntryProvenance {
   kind: GuardrailKind;
   allow: string[];
   deny: string[];
   ask: string[];
   hooks: string[];
   ignorePatterns: string[];
+  projectRoot?: string;
+  duplicate: DuplicateInfo;
 }
 
 export type FindingSeverity = 'info' | 'warning' | 'error';
@@ -206,6 +214,11 @@ export type FindingSeverity = 'info' | 'warning' | 'error';
 export type FindingCode =
   | 'mcp-duplicate'
   | 'mcp-conflict'
+  | 'capability-duplicate'
+  | 'capability-conflict'
+  | 'instruction-duplicate'
+  | 'instruction-conflict'
+  | 'guardrail-duplicate'
   | 'plaintext-secret'
   | 'unparseable-file'
   | 'empty-file'
@@ -236,6 +249,9 @@ export interface HarnessSummary {
   findingCount: number;
   errorCount: number;
   warningCount: number;
+  duplicateCount: number;
+  conflictCount: number;
+  directoryCount: number;
   totalBytes: number;
 }
 
@@ -279,6 +295,72 @@ export interface SearchResponse {
 
 export interface ProjectsResponse {
   roots: string[];
+}
+
+export interface SourceFileRef {
+  fileId: string;
+  name: string;
+  displayPath: string;
+  directory: string;
+  kind: FileKind;
+  format: FileFormat;
+  sensitivity: Sensitivity;
+  size: number;
+  modified: string;
+  editable: boolean;
+  notEditableReason?: string;
+  deprecated?: boolean;
+  unattributed?: boolean;
+}
+
+export interface SourceLocation {
+  providerId: string;
+  providerName: string;
+  locationId: string;
+  locationLabel: string;
+  scope: ConfigScope;
+  kind: FileKind;
+  format: FileFormat;
+  sensitivity: Sensitivity;
+  status: 'active' | 'absent';
+  directories: string[];
+  checkedPaths: string[];
+  templates: string[];
+  files: SourceFileRef[];
+  note?: string;
+  deprecated?: boolean;
+  projectRoot?: string;
+}
+
+export interface SourceProvider {
+  providerId: string;
+  providerName: string;
+  description: string;
+  category: 'agent-cli' | 'editor' | 'desktop-app' | 'runtime' | 'universal';
+  docsUrl?: string;
+  detected: boolean;
+  fileCount: number;
+  locationCount: number;
+  activeLocationCount: number;
+  directories: string[];
+  locations: SourceLocation[];
+}
+
+export interface SourcesResponse {
+  platform: string;
+  home: string;
+  scannedAt: string;
+  readOnly: boolean;
+  projectRoots: string[];
+  providers: SourceProvider[];
+  totals: {
+    providers: number;
+    detectedProviders: number;
+    locations: number;
+    activeLocations: number;
+    files: number;
+    directories: number;
+  };
 }
 
 export type WriteRefusalCode =

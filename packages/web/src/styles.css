@@ -973,8 +973,10 @@ main {
   gap: var(--space-3);
 }
 
-.rule-list h4 {
+.rule-list h4,
+.rule-list h5 {
   margin-top: 0;
+  font-size: 0.85rem;
 }
 
 .rule-list ul {
@@ -986,15 +988,18 @@ main {
   gap: var(--space-1);
 }
 
-.rule-list-ok h4 {
+.rule-list-ok h4,
+.rule-list-ok h5 {
   color: var(--color-ok);
 }
 
-.rule-list-error h4 {
+.rule-list-error h4,
+.rule-list-error h5 {
   color: var(--color-error);
 }
 
-.rule-list-warning h4 {
+.rule-list-warning h4,
+.rule-list-warning h5 {
   color: var(--color-warning);
 }
 
@@ -1098,4 +1103,155 @@ main {
     position: static;
     max-height: 320px;
   }
+}
+
+/* ----- Provenance, filters, and the Sources view ----- */
+
+/*
+ * A quiet chip for the secondary half of a provenance line (the location
+ * label). The primary chip already carries the tool name; giving both the same
+ * weight made the line read as two competing labels.
+ */
+.chip-quiet {
+  background: transparent;
+  color: var(--color-text-muted);
+  border-style: dashed;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-4);
+  padding: var(--space-3);
+  background: var(--color-bg-raised);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.toolbar label {
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+}
+
+.toolbar input[type='search'],
+.toolbar input[type='text'] {
+  min-width: 18rem;
+  flex: 1 1 18rem;
+}
+
+.toolbar-check {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--color-text);
+}
+
+.provenance {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  margin: var(--space-1) 0;
+  font-size: 0.85rem;
+}
+
+.provenance-directory code,
+.file-directory code,
+.mcp-directory code,
+.source-directory code,
+.source-directories code {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  background: var(--color-bg-sunken);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 0.05rem var(--space-2);
+  overflow-wrap: anywhere;
+}
+
+.provenance-file {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+}
+
+.duplicate-siblings {
+  margin-top: var(--space-1);
+}
+
+/* A left rule is enough to group conflicting rows visually without repainting
+   the whole card, which would fight the badge that already says "conflict". */
+.is-conflict {
+  border-left: 3px solid var(--color-error);
+}
+
+.mcp-directories ul,
+.source-directory ul,
+.source-files {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.source-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.source-card {
+  background: var(--color-bg-raised);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+}
+
+.source-card-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.source-card-header h3 {
+  margin: 0;
+}
+
+.source-directories {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  font-size: 0.85rem;
+}
+
+.source-directories .label {
+  color: var(--color-text-muted);
+}
+
+.source-table {
+  width: 100%;
+  margin-top: var(--space-3);
+}
+
+.source-table th,
+.source-table td {
+  vertical-align: top;
+}
+
+.source-table .note {
+  display: block;
+}
+
+/* Absent locations stay legible rather than being greyed into unreadability:
+   they are often exactly what the user came here to find. */
+.source-row-absent {
+  background: var(--color-bg-sunken);
 }

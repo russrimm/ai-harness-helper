@@ -22,22 +22,46 @@ there is no telemetry, and the tool makes no outbound network requests at all.
 
 ## What you get
 
-- **Overview** — every tool detected, every file found, and health findings:
-  duplicate MCP servers, conflicting definitions, plaintext secrets, empty or
-  unparseable files, and deprecated config locations.
+- **Overview** — every tool detected, every file found, how many directories
+  they live in, and health findings: duplicates and conflicts of every kind,
+  plaintext secrets, empty or unparseable files, and deprecated config
+  locations.
+- **Sources** — the "where does this come from?" map: every supported tool,
+  every location it reads, the directory each one resolves to on this machine,
+  and whether anything is actually there. Locations that were checked and found
+  empty are listed too, because "why is this tool ignoring my config?" is
+  usually answered by a path the tool never looks at.
 - **Files** — a tree grouped by tool and scope, with a syntax-highlighted
   viewer. Secrets are masked by default; you reveal one value at a time.
 - **MCP servers** — every server from every tool in one table, showing which
-  tools define it and where the definitions disagree.
-- **Instructions and capabilities** — CLAUDE.md, AGENTS.md,
+  tools define it, which directories the definitions live in, and where they
+  disagree.
+- **Instructions, capabilities and guardrails** — CLAUDE.md, AGENTS.md,
   copilot-instructions, `.cursorrules` and friends in precedence order, plus
-  your agents, skills, prompts, chat modes, and commands.
+  your agents, skills, prompts, chat modes, commands, permission rules, hooks
+  and ignore files. Every row shows the tool, location, directory and file it
+  came from, and is flagged if something else declares the same thing.
 - **Search** — full-text across everything discovered, honoring redaction.
-- **Export** — the whole harness as JSON or a Markdown report. Metadata only,
-  with credentials masked, so it is safe to attach to a bug report.
+- **Export** — the whole harness as JSON or a Markdown report, including the
+  source map and duplicate flags. Metadata only, with credentials masked, so it
+  is safe to attach to a bug report.
 
 You can also **edit** any config file in place, with backups, validation, and
 conflict detection.
+
+### Duplicates and conflicts
+
+Every entity — MCP server, agent, skill, prompt, command, chat mode,
+instruction file, and guardrail — is compared against every other one:
+
+- **Duplicate** means more than one file declares the same thing. That is often
+  deliberate (a project `AGENTS.md` refining a user-level one), so it is a flag,
+  not a complaint.
+- **Conflict** means one tool, at one scope, has two declarations of the same
+  name whose contents differ. Only one of them can win, and which one is rarely
+  obvious, so this is raised as a finding.
+- **Identical copy** catches the same file content living under two different
+  names — the `CLAUDE.md` you copied to `AGENTS.md` and then edited only one of.
 
 ## Usage
 
@@ -84,6 +108,11 @@ npx ai-harness-helper --project ~/code/my-app --project ~/code/other-app
 
 Anything harness-shaped that no tool claims is reported as **unattributed**
 rather than silently dropped.
+
+This table is a summary; the **Sources** view in the UI is the authoritative
+list, because it shows the same registry resolved against _your_ machine — the
+exact directories, which locations hold files, and which were checked and found
+empty.
 
 Adding a tool means adding a row to the provider registry in
 [`packages/core/src/registry.ts`](packages/core/src/registry.ts) — it is data,

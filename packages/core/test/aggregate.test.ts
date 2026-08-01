@@ -659,3 +659,121 @@ describe('aggregate - summary', () => {
     expect(result.summary.mcpServerCount).toBe(0);
   });
 });
+
+describe('aggregate - provenance', () => {
+  it('records the tool, location, directory, and file name for every entry', async () => {
+    fixture.write('.claude/agents/reviewer.md', samples.agentFile);
+    fixture.write('.claude/CLAUDE.md', samples.claudeMd);
+    fixture.write('.claude/settings.json', samples.claudeSettings);
+
+    const result = await inventory();
+    const capability = result.capabilities.find((entry) => entry.name === 'reviewer');
+    const instruction = result.instructions[0];
+    const guardrail = result.guardrails[0];
+
+    expect(capability?.providerName).toBe('Claude Code');
+    expect(capability?.locationLabel).toBe('User subagents');
+    expect(capability?.fileName).toBe('reviewer.md');
+    expect(capability?.directory).toContain('agents');
+    expect(instruction?.directory).toBeDefined();
+    expect(instruction?.providerId).toBe('claude-code');
+    expect(guardrail?.fileName).toBe('settings.json');
+    expect(guardrail?.directory).toBe(capability?.directory?.replace(/[\\/]agents$/, ''));
+  });
+
+  it('points every entry at a file the scan actually found', async () => {
+    fixture.write('.claude/agents/reviewer.md', samples.agentFile);
+    fixture.write('.claude/CLAUDE.md', samples.claudeMd);
+
+    const scanned = await scan({ environment: fixture.environment, projectRoots: [] });
+    const result = await aggregate(scanned);
+    const fileIds = new Set(scanned.files.map((file) => file.id));
+
+    for (const entry of [...result.capabilities, ...result.instructions, ...result.guardrails]) {
+      expect(fileIds.has(entry.fileId)).toBe(true);
+    }
+  });
+});
+
+describe('aggregate - duplicates across entity types', () => {
+  it('flags a capability of the same name declared in two tools', async () => {
+    fixture.write('.claude/agents/reviewer.md', samples.agentFile);
+    fixture.write('.copilot/agents/reviewer.agent.md', samples.agentFile);
+
+    const result = await inventory();
+    const reviewers = result.capabilities.filter((entry) => entry.name === 'reviewer');
+
+    expect(reviewers).toHaveLength(2);
+    for (const reviewer of reviewers) {
+      expect(reviewer.duplicate.duplicated).toBe(true);
+      expect(reviewer.duplicate.siblingFileIds).toHaveLength(1);
+    }
+    // Same content in two tools is layering, not a contradiction.
+    expect(reviewers.every((reviewer) => reviewer.duplicate.conflicting)).toBe(false);
+    expect(result.findings.some((entry) => entry.code === 'capability-duplicate')).toBe(true);
+  });
+
+  it('flags two same-named agents in one tool with different bodies as conflicting', async () => {
+    fixture.write('.claude/agents/reviewer.md', samples.agentFile);
+    fixture.write(
+      '.claude/agents/reviewer-copy.md',
+      samples.agentFile.replace('meticulous code reviewer', 'lenient code reviewer'),
+    );
+
+    const result = await inventory();
+    const reviewers = result.capabilities.filter((entry) => entry.name === 'reviewer');
+
+    expect(reviewers).toHaveLength(2);
+    expect(reviewers.every((reviewer) => reviewer.duplicate.conflicting)).toBe(true);
+    expect(result.findings.some((entry) => entry.code === 'capability-conflict')).toBe(true);
+  });
+
+  it('flags the same instruction title reached through two tools', async () => {
+    fixture.write('.claude/CLAUDE.md', samples.claudeMd);
+    fixture.write('AGENTS.md', samples.claudeMd);
+
+    const result = await inventory();
+    const duplicated = result.instructions.filter((entry) => entry.duplicate.duplicated);
+
+    expect(duplicated.length).toBeGreaterThanOrEqual(2);
+    expect(result.findings.some((entry) => entry.code === 'instruction-duplicate')).toBe(true);
+  });
+
+  it('spots a file copied under another tool name, which no title match would catch', async () => {
+    // No heading, so each file is titled after itself: the names differ even
+    // though the guidance is byte-identical.
+    const body = 'Always run the tests before committing.\n';
+    fixture.write('.claude/CLAUDE.md', body);
+    fixture.write('AGENTS.md', body);
+
+    const result = await inventory();
+    const claude = result.instructions.find((entry) => entry.fileName === 'CLAUDE.md');
+
+    expect(claude?.duplicate.duplicated).toBe(false);
+    expect(claude?.duplicate.identicalFileIds).toHaveLength(1);
+  });
+
+  it('leaves a single declaration unflagged', async () => {
+    fixture.write('.claude/agents/reviewer.md', samples.agentFile);
+
+    const result = await inventory();
+    const reviewer = result.capabilities.find((entry) => entry.name === 'reviewer');
+
+    expect(reviewer?.duplicate.duplicated).toBe(false);
+    expect(reviewer?.duplicate.conflicting).toBe(false);
+    expect(reviewer?.duplicate.identicalFileIds).toEqual([]);
+    expect(reviewer?.duplicate.siblingFileIds).toEqual([]);
+  });
+
+  it('counts duplicates, conflicts, and directories in the summary', async () => {
+    fixture.write('.claude/agents/reviewer.md', samples.agentFile);
+    fixture.write('.copilot/agents/reviewer.agent.md', samples.agentFile);
+    fixture.write('.claude/CLAUDE.md', samples.claudeMd);
+
+    const result = await inventory();
+
+    expect(result.summary.duplicateCount).toBeGreaterThanOrEqual(1);
+    expect(result.summary.conflictCount).toBe(0);
+    expect(result.summary.directoryCount).toBeGreaterThanOrEqual(3);
+  });
+});

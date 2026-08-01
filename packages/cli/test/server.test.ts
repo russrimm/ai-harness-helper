@@ -170,6 +170,33 @@ describe('read routes', () => {
     expect(body.mcpServers.map((entry) => entry.name)).toContain('github');
   });
 
+  it('returns the source map with directories for each location', async () => {
+    const body = (await call({ url: '/api/sources' })).json() as {
+      providers: Array<{
+        providerId: string;
+        detected: boolean;
+        directories: string[];
+        locations: Array<{ status: string; directories: string[] }>;
+      }>;
+      totals: { providers: number; files: number };
+    };
+    const claude = body.providers.find((provider) => provider.providerId === 'claude-code');
+
+    expect(body.totals.providers).toBeGreaterThan(0);
+    expect(claude?.detected).toBe(true);
+    expect(claude?.directories.length).toBeGreaterThan(0);
+    expect(
+      claude?.locations
+        .filter((location) => location.status === 'active')
+        .every((location) => location.directories.length > 0),
+    ).toBe(true);
+  });
+
+  it('requires a token for the source map, like every other data route', async () => {
+    const response = await call({ url: '/api/sources', token: null });
+    expect(response.statusCode).toBe(401);
+  });
+
   it('masks secrets in a file by default', async () => {
     const id = await firstFileId('.claude/settings.json');
     const body = (await call({ url: `/api/files/${id}` })).json() as {

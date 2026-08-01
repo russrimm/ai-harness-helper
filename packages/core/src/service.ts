@@ -11,10 +11,18 @@ import { isAbsolute, resolve, sep } from 'node:path';
 
 import { aggregate, type HarnessInventory } from './aggregate.js';
 import { editorLanguage, parseContent, type ParseIssue } from './parsers.js';
-import { createEnvironment, toDisplayPath } from './paths.js';
+import { createEnvironment, selectPlatformTemplates, toDisplayPath } from './paths.js';
 import { redactDocumentText, resolveRedactionPath, type RedactionRecord } from './redact.js';
+import { providers as registryProviders } from './registry.js';
 import { groupByProvider, scan, type DiscoveredFile, type ScanResult } from './scanner.js';
-import type { ResolverEnvironment } from './types.js';
+import type {
+  ConfigScope,
+  FileFormat,
+  FileKind,
+  ProviderDefinition,
+  ResolverEnvironment,
+  Sensitivity,
+} from './types.js';
 import { hashContent, writeConfigFile, type WriteOutcome, type WriterOptions } from './writer.js';
 
 /** A file's contents prepared for display or editing. */
@@ -63,6 +71,88 @@ export interface SearchResult {
   /** True when results were cut off by the limit. */
   readonly truncated: boolean;
   readonly filesSearched: number;
+}
+
+/** A discovered file as it appears in the sources map. */
+export interface SourceFileRef {
+  readonly fileId: string;
+  readonly name: string;
+  readonly displayPath: string;
+  readonly directory: string;
+  readonly kind: FileKind;
+  readonly format: FileFormat;
+  readonly sensitivity: Sensitivity;
+  readonly size: number;
+  readonly modified: string;
+  /** True when this session would accept an edit to the file. */
+  readonly editable: boolean;
+  /** Why an edit would be refused, when it would be. */
+  readonly notEditableReason?: string;
+  readonly deprecated?: boolean;
+  readonly unattributed?: boolean;
+}
+
+/**
+ * One place a tool reads configuration from, whether or not anything is there.
+ *
+ * Absent locations are as important as present ones: "Copilot would read
+ * `~/.copilot/mcp-config.json`, and there is no such file" is the answer to
+ * half the questions people have about their harness.
+ */
+export interface SourceLocation {
+  readonly providerId: string;
+  readonly providerName: string;
+  readonly locationId: string;
+  readonly locationLabel: string;
+  readonly scope: ConfigScope;
+  readonly kind: FileKind;
+  readonly format: FileFormat;
+  readonly sensitivity: Sensitivity;
+  readonly status: 'active' | 'absent';
+  /** Folders configuration was actually found in. */
+  readonly directories: readonly string[];
+  /** Concrete paths this machine checked, home-abbreviated. */
+  readonly checkedPaths: readonly string[];
+  /** Raw registry templates for this platform, e.g. `{project}/.vscode/mcp.json`. */
+  readonly templates: readonly string[];
+  readonly files: readonly SourceFileRef[];
+  readonly note?: string;
+  readonly deprecated?: boolean;
+  readonly projectRoot?: string;
+}
+
+/** Every location one tool reads, grouped for display. */
+export interface SourceProvider {
+  readonly providerId: string;
+  readonly providerName: string;
+  readonly description: string;
+  readonly category: ProviderDefinition['category'];
+  readonly docsUrl?: string;
+  /** True when at least one file was found for this tool. */
+  readonly detected: boolean;
+  readonly fileCount: number;
+  readonly locationCount: number;
+  readonly activeLocationCount: number;
+  readonly directories: readonly string[];
+  readonly locations: readonly SourceLocation[];
+}
+
+/** The complete "where does this come from?" map. */
+export interface SourcesResult {
+  readonly platform: string;
+  readonly home: string;
+  readonly scannedAt: string;
+  readonly readOnly: boolean;
+  readonly projectRoots: readonly string[];
+  readonly providers: readonly SourceProvider[];
+  readonly totals: {
+    readonly providers: number;
+    readonly detectedProviders: number;
+    readonly locations: number;
+    readonly activeLocations: number;
+    readonly files: number;
+    readonly directories: number;
+  };
 }
 
 export interface HarnessServiceOptions {
@@ -130,6 +220,189 @@ export class HarnessService {
   async getTree(): Promise<ReturnType<typeof groupByProvider>> {
     const result = await this.getScan();
     return groupByProvider(result.files);
+  }
+
+  /**
+   * Every configuration source this machine has, present or not.
+   *
+   * Built from the scan rather than from a fresh resolve, so what is reported
+   * is exactly what was consulted — a map that disagreed with the scan would
+   * be worse than no map at all.
+   */
+  async getSources(): Promise<SourcesResult> {
+    const result = await this.getScan();
+
+    const filesByLocation = new Map<string, DiscoveredFile[]>();
+    for (const file of result.files) {
+      const key = locationKey(file.providerId, file.locationId, file.projectRoot);
+      const bucket = filesByLocation.get(key);
+      if (bucket) bucket.push(file);
+      else filesByLocation.set(key, [file]);
+    }
+
+    const checkedByLocation = new Map<string, readonly string[]>();
+    for (const entry of result.missing) {
+      checkedByLocation.set(
+        locationKey(entry.providerId, entry.locationId, entry.projectRoot),
+        entry.checkedPaths,
+      );
+    }
+
+    const providers: SourceProvider[] = registryProviders.map((provider) =>
+      this.#describeProvider(provider, filesByLocation, checkedByLocation),
+    );
+
+    // Files the sweep found belong to no registry provider, but leaving them
+    // out of the source map would hide the very files most likely to surprise
+    // someone.
+    const claimed = new Set(registryProviders.map((provider) => provider.id));
+    const strays = [...new Set(result.files.map((file) => file.providerId))].filter(
+      (id) => !claimed.has(id),
+    );
+    for (const providerId of strays) {
+      providers.push(this.#describeStrayProvider(providerId, result.files));
+    }
+
+    providers.sort(
+      (a, b) =>
+        Number(b.detected) - Number(a.detected) || a.providerName.localeCompare(b.providerName),
+    );
+
+    const allLocationsFlat = providers.flatMap((provider) => provider.locations);
+
+    return {
+      platform: result.platform,
+      home: toDisplayPath(result.home, this.#environment),
+      scannedAt: result.scannedAt,
+      readOnly: this.#readOnly,
+      projectRoots: this.#projectRoots,
+      providers,
+      totals: {
+        providers: providers.length,
+        detectedProviders: providers.filter((provider) => provider.detected).length,
+        locations: allLocationsFlat.length,
+        activeLocations: allLocationsFlat.filter((location) => location.status === 'active').length,
+        files: result.files.length,
+        directories: new Set(result.files.map((file) => file.directory)).size,
+      },
+    };
+  }
+
+  #describeProvider(
+    provider: ProviderDefinition,
+    filesByLocation: ReadonlyMap<string, DiscoveredFile[]>,
+    checkedByLocation: ReadonlyMap<string, readonly string[]>,
+  ): SourceProvider {
+    const locations: SourceLocation[] = [];
+
+    for (const definition of provider.locations) {
+      const templates = selectPlatformTemplates(definition.paths, this.#environment.platform);
+      // A project-scope location is checked once per registered root, so the
+      // same definition can legitimately produce several rows.
+      const roots =
+        definition.scope === 'project'
+          ? this.#projectRoots.length > 0
+            ? this.#projectRoots
+            : [undefined]
+          : [undefined];
+
+      for (const root of roots) {
+        const key = locationKey(provider.id, definition.id, root);
+        const files = filesByLocation.get(key) ?? [];
+        const checked = checkedByLocation.get(key) ?? [];
+
+        locations.push({
+          providerId: provider.id,
+          providerName: provider.name,
+          locationId: definition.id,
+          locationLabel: definition.label,
+          scope: definition.scope,
+          kind: definition.kind,
+          format: definition.format,
+          sensitivity: definition.sensitivity,
+          status: files.length > 0 ? 'active' : 'absent',
+          directories: [...new Set(files.map((file) => file.directory))].sort(),
+          checkedPaths: (files.length > 0 ? files.map((file) => file.path) : checked).map((path) =>
+            toDisplayPath(path, this.#environment),
+          ),
+          templates,
+          files: files.map((file) => this.#describeFile(file)),
+          ...(definition.note !== undefined ? { note: definition.note } : {}),
+          ...(definition.deprecated ? { deprecated: true } : {}),
+          ...(root !== undefined ? { projectRoot: root } : {}),
+        });
+      }
+    }
+
+    const fileCount = locations.reduce((sum, location) => sum + location.files.length, 0);
+
+    return {
+      providerId: provider.id,
+      providerName: provider.name,
+      description: provider.description,
+      category: provider.category,
+      ...(provider.docsUrl !== undefined ? { docsUrl: provider.docsUrl } : {}),
+      detected: fileCount > 0,
+      fileCount,
+      locationCount: locations.length,
+      activeLocationCount: locations.filter((location) => location.status === 'active').length,
+      directories: [...new Set(locations.flatMap((location) => location.directories))].sort(),
+      locations,
+    };
+  }
+
+  #describeStrayProvider(providerId: string, files: readonly DiscoveredFile[]): SourceProvider {
+    const owned = files.filter((file) => file.providerId === providerId);
+    const first = owned[0];
+    const locations: SourceLocation[] = owned.map((file) => ({
+      providerId,
+      providerName: file.providerName,
+      locationId: file.locationId,
+      locationLabel: file.locationLabel,
+      scope: file.scope,
+      kind: file.kind,
+      format: file.format,
+      sensitivity: file.sensitivity,
+      status: 'active',
+      directories: [file.directory],
+      checkedPaths: [file.displayPath],
+      templates: [],
+      files: [this.#describeFile(file)],
+      ...(file.note !== undefined ? { note: file.note } : {}),
+      ...(file.projectRoot !== undefined ? { projectRoot: file.projectRoot } : {}),
+    }));
+
+    return {
+      providerId,
+      providerName: first?.providerName ?? providerId,
+      description: 'Harness-shaped configuration that no supported tool claims.',
+      category: 'universal',
+      detected: owned.length > 0,
+      fileCount: owned.length,
+      locationCount: locations.length,
+      activeLocationCount: locations.length,
+      directories: [...new Set(owned.map((file) => file.directory))].sort(),
+      locations,
+    };
+  }
+
+  #describeFile(file: DiscoveredFile): SourceFileRef {
+    const blocked = this.#editBlockReason(file);
+    return {
+      fileId: file.id,
+      name: file.name,
+      displayPath: file.displayPath,
+      directory: file.directory,
+      kind: file.kind,
+      format: file.format,
+      sensitivity: file.sensitivity,
+      size: file.size,
+      modified: file.modified,
+      editable: blocked === undefined,
+      ...(blocked !== undefined ? { notEditableReason: blocked } : {}),
+      ...(file.deprecated ? { deprecated: true } : {}),
+      ...(file.unattributed ? { unattributed: true } : {}),
+    };
   }
 
   async addProjectRoot(root: string): Promise<readonly string[]> {
@@ -374,6 +647,7 @@ export class HarnessService {
   async exportJson(): Promise<Record<string, unknown>> {
     const result = await this.getScan();
     const inventory = await this.getInventory();
+    const sources = await this.getSources();
     return {
       generatedAt: new Date().toISOString(),
       platform: result.platform,
@@ -383,13 +657,32 @@ export class HarnessService {
       providers: groupByProvider(result.files).map((group) => ({
         providerId: group.providerId,
         providerName: group.providerName,
+        directories: [...new Set(group.files.map((file) => file.directory))].sort(),
         files: group.files.map((file) => ({
           displayPath: file.displayPath,
+          directory: file.directory,
+          locationLabel: file.locationLabel,
           scope: file.scope,
           kind: file.kind,
           format: file.format,
           size: file.size,
           modified: file.modified,
+        })),
+      })),
+      sources: sources.providers.map((provider) => ({
+        providerId: provider.providerId,
+        providerName: provider.providerName,
+        detected: provider.detected,
+        fileCount: provider.fileCount,
+        directories: provider.directories,
+        locations: provider.locations.map((location) => ({
+          locationId: location.locationId,
+          locationLabel: location.locationLabel,
+          scope: location.scope,
+          kind: location.kind,
+          status: location.status,
+          directories: location.directories,
+          checkedPaths: location.checkedPaths,
         })),
       })),
       mcpServers: inventory.mcpServers,
@@ -406,13 +699,17 @@ export class HarnessService {
   async exportMarkdown(): Promise<string> {
     const result = await this.getScan();
     const inventory = await this.getInventory();
+    const sources = await this.getSources();
     const lines: string[] = [];
 
     lines.push('# Agentic harness report', '');
     lines.push(`Generated ${new Date().toISOString()} on ${result.platform}.`, '');
     lines.push(
       `**${inventory.summary.providerCount}** tools · **${inventory.summary.fileCount}** files · ` +
+        `**${inventory.summary.directoryCount}** directories · ` +
         `**${inventory.summary.mcpServerCount}** MCP servers · ` +
+        `**${inventory.summary.duplicateCount}** duplicates ` +
+        `(**${inventory.summary.conflictCount}** conflicting) · ` +
         `**${inventory.summary.findingCount}** findings`,
       '',
     );
@@ -428,13 +725,13 @@ export class HarnessService {
 
     if (inventory.mcpServers.length > 0) {
       lines.push('## MCP servers', '');
-      lines.push('| Server | Transport | Defined by | Status |');
-      lines.push('| --- | --- | --- | --- |');
+      lines.push('| Server | Transport | Defined by | Directory | Status |');
+      lines.push('| --- | --- | --- | --- | --- |');
       for (const server of inventory.mcpServers) {
         const status = server.conflicting ? 'conflict' : server.duplicated ? 'duplicate' : 'ok';
         lines.push(
           `| ${server.name} | ${server.definitions[0]?.transport ?? 'unknown'} | ` +
-            `${server.providerIds.join(', ')} | ${status} |`,
+            `${server.providerIds.join(', ')} | ${server.directories.join(', ')} | ${status} |`,
         );
       }
       lines.push('');
@@ -442,16 +739,42 @@ export class HarnessService {
 
     if (inventory.instructions.length > 0) {
       lines.push('## Instructions', '');
+      lines.push('| Title | Scope | Tool | Directory | Duplicate |');
+      lines.push('| --- | --- | --- | --- | --- |');
       for (const entry of inventory.instructions) {
-        lines.push(`- \`${entry.displayPath}\` (${entry.scope}) — ${entry.title}`);
+        lines.push(
+          `| ${entry.title} | ${entry.scope} | ${entry.providerName} | ` +
+            `${entry.directory} | ${describeDuplicate(entry.duplicate)} |`,
+        );
       }
       lines.push('');
     }
 
     if (inventory.capabilities.length > 0) {
       lines.push('## Capabilities', '');
+      lines.push('| Name | Kind | Tool | Directory | Duplicate |');
+      lines.push('| --- | --- | --- | --- | --- |');
       for (const entry of inventory.capabilities) {
-        lines.push(`- **${entry.name}** (${entry.kind}, ${entry.providerName})`);
+        lines.push(
+          `| ${entry.name} | ${entry.kind} | ${entry.providerName} | ` +
+            `${entry.directory} | ${describeDuplicate(entry.duplicate)} |`,
+        );
+      }
+      lines.push('');
+    }
+
+    lines.push('## Sources', '');
+    for (const provider of sources.providers) {
+      lines.push(
+        `### ${provider.providerName}${provider.detected ? '' : ' (nothing found)'}`,
+        '',
+      );
+      for (const location of provider.locations) {
+        const where =
+          location.checkedPaths.length > 0
+            ? location.checkedPaths.join(', ')
+            : location.templates.join(', ');
+        lines.push(`- ${location.locationLabel} (${location.scope}) — ${location.status}: ${where}`);
       }
       lines.push('');
     }
@@ -460,7 +783,7 @@ export class HarnessService {
     for (const group of groupByProvider(result.files)) {
       lines.push(`### ${group.providerName}`, '');
       for (const file of group.files) {
-        lines.push(`- \`${file.displayPath}\` — ${file.kind}, ${file.scope}`);
+        lines.push(`- \`${file.displayPath}\` — ${file.kind}, ${file.scope}, in ${file.directory}`);
       }
       lines.push('');
     }
@@ -504,8 +827,19 @@ function normalizeKey(path: string): string {
   return process.platform === 'win32' ? path.toLowerCase() : path;
 }
 
+/** Identifies one provider location, per project root where that applies. */
+function locationKey(providerId: string, locationId: string, projectRoot?: string): string {
+  return `${providerId}|${locationId}|${projectRoot === undefined ? '' : normalizeKey(projectRoot)}`;
+}
+
 function samePath(a: string, b: string): boolean {
   return normalizeKey(a.replace(/[\\/]+$/, '')) === normalizeKey(b.replace(/[\\/]+$/, ''));
+}
+
+/** One-word summary of an entry's duplicate status, for the Markdown report. */
+function describeDuplicate(info: { duplicated: boolean; conflicting: boolean }): string {
+  if (info.conflicting) return 'conflict';
+  return info.duplicated ? 'duplicate' : 'unique';
 }
 
 function formatBytes(bytes: number): string {

@@ -14,6 +14,7 @@ import type {
   ProjectsResponse,
   ScanResponse,
   SearchResponse,
+  SourcesResponse,
   WriteOutcome,
 } from './types.js';
 
@@ -164,6 +165,10 @@ export function postScan(): Promise<ScanResponse> {
 
 export function getInventory(): Promise<HarnessInventory> {
   return request('/api/inventory');
+}
+
+export function getSources(): Promise<SourcesResponse> {
+  return request('/api/sources');
 }
 
 export function getFile(id: string, reveal = false): Promise<FileDocument> {

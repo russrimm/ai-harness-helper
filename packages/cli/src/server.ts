@@ -109,6 +109,8 @@ export async function createServer(options: ServerOptions): Promise<HarnessServe
 
   app.get('/api/inventory', async () => service.getInventory());
 
+  app.get('/api/sources', async () => service.getSources());
+
   app.get('/api/overview', async () => {
     const [result, inventory] = await Promise.all([service.getScan(), service.getInventory()]);
     return {

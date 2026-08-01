@@ -73,7 +73,10 @@ export function McpView(): ReactElement {
     <div className="view view-mcp">
       <h2>MCP servers</h2>
       <p className="muted">
-        {servers.length} distinct server name(s) across every configured tool.
+        {servers.length} distinct server name(s) across every configured tool.{' '}
+        {servers.filter((server) => server.duplicated).length} declared in more than one place,{' '}
+        {servers.filter((server) => server.conflicting).length} with conflicting settings. Each
+        expanded row shows the tool, location, directory, and file every definition comes from.
       </p>
       <table className="mcp-table">
         <caption className="visually-hidden">MCP servers by name, status, and source</caption>
@@ -84,6 +87,7 @@ export function McpView(): ReactElement {
             <th scope="col">Status</th>
             <th scope="col">Transport</th>
             <th scope="col">Defined by</th>
+            <th scope="col">Directories</th>
             <th scope="col">Command / URL</th>
             <th scope="col">Env vars</th>
           </tr>
@@ -160,19 +164,31 @@ function FragmentRow({
             ))}
           </ul>
         </td>
+        <td className="mcp-directories">
+          <ul>
+            {server.directories.map((directory) => (
+              <li key={directory}>
+                <code>{directory}</code>
+              </li>
+            ))}
+          </ul>
+        </td>
         <td className="mcp-target">{summarizeTarget(server.definitions[0])}</td>
         <td>{envKeys.length > 0 ? envKeys.join(', ') : '\u2014'}</td>
       </tr>
       {isOpen ? (
         <tr id={`mcp-defs-${server.name}`}>
           <td></td>
-          <td colSpan={6}>
+          <td colSpan={7}>
             <table className="mcp-definitions-table">
               <caption className="visually-hidden">Every definition of {server.name}</caption>
               <thead>
                 <tr>
-                  <th scope="col">Source</th>
+                  <th scope="col">Tool</th>
+                  <th scope="col">Location</th>
                   <th scope="col">Scope</th>
+                  <th scope="col">Directory</th>
+                  <th scope="col">File</th>
                   <th scope="col">Transport</th>
                   <th scope="col">Command / URL / reference</th>
                   <th scope="col">Env vars</th>
@@ -182,12 +198,17 @@ function FragmentRow({
               <tbody>
                 {server.definitions.map((definition) => (
                   <tr key={definition.fileId}>
+                    <td>{definition.providerName}</td>
+                    <td>{definition.locationLabel}</td>
+                    <td>{SCOPE_LABELS[definition.scope]}</td>
+                    <td className="mcp-directory">
+                      <code title={definition.displayPath}>{definition.directory}</code>
+                    </td>
                     <td>
                       <a href={`#/files/${encodeURIComponent(definition.fileId)}`}>
-                        {definition.displayPath}
+                        {definition.fileName}
                       </a>
                     </td>
-                    <td>{SCOPE_LABELS[definition.scope]}</td>
                     <td>{definition.transport}</td>
                     <td className="mcp-target">
                       {definition.command ?? definition.url ?? definition.reference ?? '\u2014'}

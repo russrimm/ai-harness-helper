@@ -2,6 +2,7 @@ import type { ReactElement } from 'react';
 
 const LINKS: Array<{ path: string; label: string }> = [
   { path: '/', label: 'Overview' },
+  { path: '/sources', label: 'Sources' },
   { path: '/files', label: 'Files' },
   { path: '/mcp', label: 'MCP' },
   { path: '/instructions', label: 'Instructions' },
