@@ -578,6 +578,35 @@ main {
   font-size: 0.9rem;
 }
 
+.stat-card-hint {
+  margin: var(--space-1) 0 0;
+  color: var(--color-text-muted);
+  font-size: 0.78rem;
+}
+
+/* Linked cards keep the card's own look rather than the default link look. */
+a.stat-card-link {
+  display: block;
+  color: inherit;
+  text-decoration: none;
+}
+
+a.stat-card-link:hover,
+a.stat-card-link:focus-visible {
+  border-color: var(--color-accent);
+  box-shadow: var(--shadow-md);
+}
+
+a.stat-card-link:focus-visible {
+  border-radius: var(--radius-lg);
+}
+
+a.stat-card-link:hover .stat-card-label,
+a.stat-card-link:focus-visible .stat-card-label {
+  color: var(--color-text);
+  text-decoration: underline;
+}
+
 .stat-card-error {
   border-color: var(--color-error);
 }
@@ -656,6 +685,7 @@ main {
 .root-list li {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: var(--space-3);
   padding: var(--space-2) var(--space-3);
   background: var(--color-bg-raised);

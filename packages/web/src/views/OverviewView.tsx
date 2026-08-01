@@ -18,6 +18,29 @@ const SEVERITY_VARIANT: Record<FindingSeverity, 'error' | 'warning' | 'info'> = 
   warning: 'warning',
   info: 'info',
 };
+const SEVERITY_LABELS: Record<FindingSeverity, string> = {
+  error: 'Errors',
+  warning: 'Warnings',
+  info: 'Info',
+};
+const SEVERITIES: readonly FindingSeverity[] = ['error', 'warning', 'info'];
+
+/** Outcome of the last project-root change, so a success is visible too. */
+interface RootFeedback {
+  tone: 'ok' | 'error';
+  text: string;
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  const kilobytes = bytes / 1024;
+  if (kilobytes < 1024) return `${kilobytes.toFixed(1)} KB`;
+  return `${(kilobytes / 1024).toFixed(1)} MB`;
+}
+
+function plural(count: number, noun: string): string {
+  return `${count} ${noun}${count === 1 ? '' : 's'}`;
+}
 
 export function OverviewView(): ReactElement {
   const [data, setData] = useState<OverviewResponse | undefined>(undefined);
@@ -25,19 +48,25 @@ export function OverviewView(): ReactElement {
   const [retryable, setRetryable] = useState(true);
   const [loading, setLoading] = useState(true);
   const [scanning, setScanning] = useState(false);
+  const [announcement, setAnnouncement] = useState('');
+  const [severityFilter, setSeverityFilter] = useState<Set<FindingSeverity>>(new Set());
   const [newRoot, setNewRoot] = useState('');
   const [rootBusy, setRootBusy] = useState<string | undefined>(undefined);
-  const [rootMessage, setRootMessage] = useState<string | undefined>(undefined);
+  const [rootFeedback, setRootFeedback] = useState<RootFeedback | undefined>(undefined);
+  const [pendingRemoval, setPendingRemoval] = useState<string | undefined>(undefined);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (): Promise<OverviewResponse | undefined> => {
     setLoading(true);
     setError(undefined);
     setRetryable(true);
     try {
-      setData(await getOverview());
+      const next = await getOverview();
+      setData(next);
+      return next;
     } catch (caught) {
       setError(describeError(caught));
       setRetryable(isRetryable(caught));
+      return undefined;
     } finally {
       setLoading(false);
     }
@@ -49,12 +78,21 @@ export function OverviewView(): ReactElement {
 
   const handleRescan = async (): Promise<void> => {
     setScanning(true);
+    setAnnouncement('Rescanning…');
     try {
       await postScan();
-      await load();
+      const next = await load();
+      if (next) {
+        const files = plural(next.summary.fileCount, 'config file');
+        const findings = plural(next.summary.findingCount, 'finding');
+        setAnnouncement(`Rescan complete. ${files}, ${findings}.`);
+      } else {
+        setAnnouncement('Rescan finished, but the results could not be loaded.');
+      }
     } catch (caught) {
       setError(describeError(caught));
       setRetryable(isRetryable(caught));
+      setAnnouncement('Rescan failed.');
     } finally {
       setScanning(false);
     }
@@ -65,13 +103,20 @@ export function OverviewView(): ReactElement {
     const path = newRoot.trim();
     if (path.length === 0) return;
     setRootBusy(path);
-    setRootMessage(undefined);
+    setRootFeedback(undefined);
     try {
       await addProject(path);
       setNewRoot('');
-      await load();
+      const next = await load();
+      const added = next?.projectRoots.find((root) => root.path === path);
+      setRootFeedback({
+        tone: 'ok',
+        text: added
+          ? `Added ${added.path} — ${plural(added.fileCount, 'file')} found.`
+          : `Added ${path}.`,
+      });
     } catch (caught) {
-      setRootMessage(describeError(caught));
+      setRootFeedback({ tone: 'error', text: describeError(caught) });
     } finally {
       setRootBusy(undefined);
     }
@@ -79,15 +124,29 @@ export function OverviewView(): ReactElement {
 
   const handleRemoveRoot = async (path: string): Promise<void> => {
     setRootBusy(path);
-    setRootMessage(undefined);
+    setRootFeedback(undefined);
     try {
       await removeProject(path);
+      setPendingRemoval(undefined);
       await load();
+      setRootFeedback({
+        tone: 'ok',
+        text: `Removed ${path}. Nothing on disk changed — add the path again to restore it.`,
+      });
     } catch (caught) {
-      setRootMessage(describeError(caught));
+      setRootFeedback({ tone: 'error', text: describeError(caught) });
     } finally {
       setRootBusy(undefined);
     }
+  };
+
+  const toggleSeverity = (severity: FindingSeverity): void => {
+    setSeverityFilter((previous) => {
+      const next = new Set(previous);
+      if (next.has(severity)) next.delete(severity);
+      else next.add(severity);
+      return next;
+    });
   };
 
   if (loading && !data) return <LoadingState label="Scanning your machine…" />;
@@ -96,10 +155,27 @@ export function OverviewView(): ReactElement {
   }
   if (!data) return <EmptyState title="No scan data yet." />;
 
+  const { summary } = data;
+
   const sortedFindings = [...data.findings].sort(
     (a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity],
   );
+  const severityCounts: Record<FindingSeverity, number> = { error: 0, warning: 0, info: 0 };
+  for (const finding of sortedFindings) severityCounts[finding.severity] += 1;
+  const activeSeverities = SEVERITIES.filter((severity) => severityCounts[severity] > 0);
 
+  // An empty filter means "everything", so the default view hides nothing.
+  const visibleFindings =
+    severityFilter.size === 0
+      ? sortedFindings
+      : sortedFindings.filter((finding) => severityFilter.has(finding.severity));
+
+  const findingsHint =
+    summary.findingCount === 0
+      ? 'Nothing to review'
+      : activeSeverities.map((one) => `${severityCounts[one]} ${one}`).join(', ');
+
+  const scannedAtLabel = new Date(data.scannedAt).toLocaleString();
   const toolNames = new Map(data.tree.map((group) => [group.providerId, group.providerName]));
 
   return (
@@ -111,39 +187,78 @@ export function OverviewView(): ReactElement {
         </button>
       </div>
       <p role="status" aria-live="polite" className="visually-hidden">
-        {scanning ? 'Rescanning…' : ''}
+        {announcement}
       </p>
 
-      <section aria-label="Summary">
+      {/*
+       * A failure *after* the first successful load leaves stale numbers on
+       * screen, so it needs its own banner: the full-page error state above
+       * only renders when there is nothing to show at all, which meant a
+       * failed rescan previously did nothing visible whatsoever.
+       */}
+      {error ? (
+        <div className="notice notice-error" role="alert">
+          <p>
+            <strong>That did not work.</strong> {error}
+          </p>
+          {retryable ? (
+            <div className="notice-actions">
+              <button type="button" onClick={() => void load()} disabled={loading}>
+                {loading ? 'Retrying…' : 'Try again'}
+              </button>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
+      <section aria-labelledby="inventory-heading">
+        <h3 id="inventory-heading">Inventory</h3>
         <div className="stat-grid">
-          <StatCard label="Tools detected" value={data.summary.providerCount} />
-          <StatCard label="Config files" value={data.summary.fileCount} />
-          <StatCard label="Directories" value={data.summary.directoryCount} />
-          <StatCard label="MCP servers" value={data.summary.mcpServerCount} />
           <StatCard
-            label="Duplicates"
-            value={data.summary.duplicateCount}
-            {...(data.summary.duplicateCount > 0 ? { tone: 'warning' as const } : {})}
+            label="Tools detected"
+            value={summary.providerCount}
+            hint="See every location"
+            href="#/sources"
           />
           <StatCard
-            label="Conflicts"
-            value={data.summary.conflictCount}
-            {...(data.summary.conflictCount > 0 ? { tone: 'error' as const } : {})}
+            label="Config files"
+            value={summary.fileCount}
+            hint={formatBytes(summary.totalBytes)}
+            href="#/files"
           />
           <StatCard
-            label="Findings"
-            value={data.summary.findingCount}
-            tone={
-              data.summary.errorCount > 0
-                ? 'error'
-                : data.summary.warningCount > 0
-                  ? 'warning'
-                  : undefined
-            }
+            label="Directories"
+            value={summary.directoryCount}
+            hint="Holding configuration"
+            href="#/sources"
+          />
+          <StatCard
+            label="MCP servers"
+            value={summary.mcpServerCount}
+            hint={plural(summary.mcpDefinitionCount, 'definition')}
+            href="#/mcp"
+          />
+          <StatCard
+            label="Instruction files"
+            value={summary.instructionCount}
+            hint="In precedence order"
+            href="#/instructions"
+          />
+          <StatCard
+            label="Capabilities"
+            value={summary.capabilityCount}
+            hint="Agents, skills, prompts"
+            href="#/instructions"
+          />
+          <StatCard
+            label="Guardrails"
+            value={summary.guardrailCount}
+            hint="Permissions, hooks, ignores"
+            href="#/instructions"
           />
         </div>
         <p className="muted">
-          Scanned {new Date(data.scannedAt).toLocaleString()} on {data.platform} in{' '}
+          Scanned <time dateTime={data.scannedAt}>{scannedAtLabel}</time> on {data.platform} in{' '}
           {data.durationMs} ms.
           {data.missingCount > 0
             ? ` ${data.missingCount} known locations were not present.`
@@ -171,15 +286,74 @@ export function OverviewView(): ReactElement {
       </section>
 
       <section aria-labelledby="findings-heading">
-        <h3 id="findings-heading">Health findings</h3>
+        <h3 id="findings-heading">Health</h3>
+        <div className="stat-grid">
+          <StatCard
+            label="Duplicates"
+            value={summary.duplicateCount}
+            hint="Declared in more than one place — often deliberate"
+            {...(summary.duplicateCount > 0 ? { tone: 'warning' as const } : {})}
+          />
+          <StatCard
+            label="Conflicts"
+            value={summary.conflictCount}
+            hint="One tool, one scope, two answers"
+            {...(summary.conflictCount > 0 ? { tone: 'error' as const } : {})}
+          />
+          <StatCard
+            label="Findings"
+            value={summary.findingCount}
+            hint={findingsHint}
+            tone={
+              summary.errorCount > 0 ? 'error' : summary.warningCount > 0 ? 'warning' : undefined
+            }
+          />
+        </div>
         {sortedFindings.length === 0 ? (
           <EmptyState title="No issues found. Your harness looks tidy." />
         ) : (
-          <ul className="findings-list">
-            {sortedFindings.map((finding) => (
-              <FindingRow key={finding.id} finding={finding} />
-            ))}
-          </ul>
+          <>
+            <ul className="chip-toggle-list" aria-label="Filter findings by severity">
+              {activeSeverities.map((severity) => (
+                <li key={severity}>
+                  <button
+                    type="button"
+                    className="chip-toggle"
+                    aria-pressed={severityFilter.has(severity)}
+                    onClick={() => toggleSeverity(severity)}
+                  >
+                    {SEVERITY_LABELS[severity]} ({severityCounts[severity]})
+                  </button>
+                </li>
+              ))}
+              {severityFilter.size > 0 ? (
+                <li>
+                  <button
+                    type="button"
+                    className="chip-toggle"
+                    onClick={() => setSeverityFilter(new Set())}
+                  >
+                    Clear filter
+                  </button>
+                </li>
+              ) : null}
+            </ul>
+            <p className="muted small" role="status" aria-live="polite">
+              Showing {visibleFindings.length} of {plural(sortedFindings.length, 'finding')}.
+            </p>
+            {visibleFindings.length === 0 ? (
+              <EmptyState
+                title="No findings match that severity."
+                detail="Clear the filter to see everything again."
+              />
+            ) : (
+              <ul className="findings-list">
+                {visibleFindings.map((finding) => (
+                  <FindingRow key={finding.id} finding={finding} />
+                ))}
+              </ul>
+            )}
+          </>
         )}
       </section>
 
@@ -196,17 +370,40 @@ export function OverviewView(): ReactElement {
             {data.projectRoots.map((root) => (
               <li key={root.path}>
                 <span className="root-path">{root.path}</span>
-                <span className="muted">
-                  {root.fileCount} file{root.fileCount === 1 ? '' : 's'}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => void handleRemoveRoot(root.path)}
-                  disabled={rootBusy === root.path}
-                  aria-label={`Remove project root ${root.path}`}
-                >
-                  {rootBusy === root.path ? 'Removing…' : 'Remove'}
-                </button>
+                <span className="muted">{plural(root.fileCount, 'file')}</span>
+                {/*
+                 * Two-step rather than `confirm()`: removing a root discards a
+                 * path the user typed by hand, and an inline confirmation stays
+                 * keyboard-operable and readable by a screen reader.
+                 */}
+                {pendingRemoval === root.path ? (
+                  <>
+                    <span className="muted small">Stop scanning this folder?</span>
+                    <button
+                      type="button"
+                      onClick={() => void handleRemoveRoot(root.path)}
+                      disabled={rootBusy === root.path}
+                    >
+                      {rootBusy === root.path ? 'Removing…' : 'Confirm'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPendingRemoval(undefined)}
+                      disabled={rootBusy === root.path}
+                    >
+                      Cancel
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setPendingRemoval(root.path)}
+                    disabled={rootBusy !== undefined}
+                    aria-label={`Remove project root ${root.path}`}
+                  >
+                    Remove
+                  </button>
+                )}
               </li>
             ))}
           </ul>
@@ -226,9 +423,14 @@ export function OverviewView(): ReactElement {
             </button>
           </div>
         </form>
-        {rootMessage ? (
+        {rootFeedback?.tone === 'error' ? (
           <p role="alert" className="state-error-inline">
-            {rootMessage}
+            {rootFeedback.text}
+          </p>
+        ) : null}
+        {rootFeedback?.tone === 'ok' ? (
+          <p role="status" aria-live="polite" className="muted">
+            {rootFeedback.text}
           </p>
         ) : null}
       </section>
