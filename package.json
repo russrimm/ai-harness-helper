@@ -1,0 +1,43 @@
+{
+  "name": "ai-harness-helper-monorepo",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Discover, inspect, and edit every agentic AI harness configuration file on your machine.",
+  "engines": {
+    "node": ">=20.11.0"
+  },
+  "workspaces": [
+    "packages/core",
+    "packages/cli",
+    "packages/web"
+  ],
+  "scripts": {
+    "build": "npm run build --workspace @ai-harness-helper/core && npm run build --workspace @ai-harness-helper/web && npm run build --workspace ai-harness-helper",
+    "typecheck": "tsc --build --force packages/core packages/cli && npm run typecheck --workspace @ai-harness-helper/web",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "start": "node packages/cli/dist/bin.js",
+    "clean": "node -e \"for (const p of ['packages/core/dist','packages/cli/dist','packages/web/dist','packages/core/tsconfig.tsbuildinfo','packages/cli/tsconfig.tsbuildinfo']) require('node:fs').rmSync(p,{recursive:true,force:true})\""
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^22.18.12",
+    "eslint": "^10.8.0",
+    "eslint-config-prettier": "^10.1.8",
+    "prettier": "^3.6.2",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.65.0",
+    "vitest": "^3.2.4"
+  },
+  "allowScripts": {
+    "esbuild@0.28.1": true
+  },
+  "overrides": {
+    "esbuild": "^0.28.1"
+  }
+}

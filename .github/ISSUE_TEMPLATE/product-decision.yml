@@ -1,6 +1,6 @@
 name: Product decision
 description: Propose an unresolved product or engineering decision with evidence
-title: "[Decision]: "
+title: '[Decision]: '
 body:
   - type: dropdown
     id: priority
