@@ -174,7 +174,7 @@ function RuleList({
   if (rules.length === 0) return null;
   return (
     <div className={`rule-list rule-list-${tone}`}>
-      <h4>{label}</h4>
+      <h3>{label}</h3>
       <ul>
         {rules.map((rule, index) => (
           <li key={`${rule}-${index}`}>

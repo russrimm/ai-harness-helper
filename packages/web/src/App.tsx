@@ -1,16 +1,31 @@
+import { lazy, Suspense } from 'react';
 import type { ReactElement } from 'react';
 import { getHealth } from './api/client.js';
 import { Nav } from './components/Nav.js';
+import { LoadingState } from './components/StatusStates.js';
 import { ThemeToggle } from './components/ThemeToggle.js';
 import { useAsync } from './hooks/useAsync.js';
 import { splitFirstSegment, useHashLocation } from './hooks/useHashLocation.js';
 import { useTheme } from './hooks/useTheme.js';
-import { ExportView } from './views/ExportView.js';
-import { FilesView } from './views/FilesView.js';
-import { InstructionsView } from './views/InstructionsView.js';
-import { McpView } from './views/McpView.js';
-import { OverviewView } from './views/OverviewView.js';
-import { SearchView } from './views/SearchView.js';
+
+const ExportView = lazy(async () => ({
+  default: (await import('./views/ExportView.js')).ExportView,
+}));
+const FilesView = lazy(async () => ({
+  default: (await import('./views/FilesView.js')).FilesView,
+}));
+const InstructionsView = lazy(async () => ({
+  default: (await import('./views/InstructionsView.js')).InstructionsView,
+}));
+const McpView = lazy(async () => ({
+  default: (await import('./views/McpView.js')).McpView,
+}));
+const OverviewView = lazy(async () => ({
+  default: (await import('./views/OverviewView.js')).OverviewView,
+}));
+const SearchView = lazy(async () => ({
+  default: (await import('./views/SearchView.js')).SearchView,
+}));
 
 const KNOWN_BASES = ['/', '/files', '/mcp', '/instructions', '/search', '/export'];
 
@@ -40,13 +55,15 @@ export function App(): ReactElement {
         <Nav currentBase={base} />
       </header>
       <main id="main-content">
-        {base === '/files' ? <FilesView initialFileId={rest} /> : null}
-        {base === '/mcp' ? <McpView /> : null}
-        {base === '/instructions' ? <InstructionsView /> : null}
-        {base === '/search' ? <SearchView initialQuery={location.params.get('q') ?? ''} /> : null}
-        {base === '/export' ? <ExportView /> : null}
-        {base === '/' ? <OverviewView /> : null}
-        {!KNOWN_BASES.includes(base) ? <NotFound /> : null}
+        <Suspense fallback={<LoadingState label="Loading view…" />}>
+          {base === '/files' ? <FilesView initialFileId={rest} /> : null}
+          {base === '/mcp' ? <McpView /> : null}
+          {base === '/instructions' ? <InstructionsView /> : null}
+          {base === '/search' ? <SearchView initialQuery={location.params.get('q') ?? ''} /> : null}
+          {base === '/export' ? <ExportView /> : null}
+          {base === '/' ? <OverviewView /> : null}
+          {!KNOWN_BASES.includes(base) ? <NotFound /> : null}
+        </Suspense>
       </main>
     </>
   );

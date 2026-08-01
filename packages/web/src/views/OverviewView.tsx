@@ -196,8 +196,10 @@ export function OverviewView(): ReactElement {
           <div className="root-form-row">
             <input
               id="new-root-path"
+              name="project-root"
               type="text"
               placeholder="C:\repos\my-project"
+              autoComplete="off"
               value={newRoot}
               onChange={(event) => setNewRoot(event.target.value)}
             />

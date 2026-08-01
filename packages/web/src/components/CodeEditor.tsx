@@ -1,52 +1,30 @@
-import CodeMirror, { type Extension } from '@uiw/react-codemirror';
-import { json } from '@codemirror/lang-json';
-import { markdown } from '@codemirror/lang-markdown';
-import { yaml } from '@codemirror/lang-yaml';
-import { EditorView } from '@codemirror/view';
+import { lazy, Suspense } from 'react';
 import type { ReactElement } from 'react';
+import { LoadingState } from './StatusStates.js';
 
 export type EditorLanguage = 'json' | 'yaml' | 'markdown' | 'text';
 
-function extensionsFor(language: EditorLanguage): Extension[] {
-  switch (language) {
-    case 'json':
-      return [json()];
-    case 'yaml':
-      return [yaml()];
-    case 'markdown':
-      return [markdown()];
-    case 'text':
-      return [];
-  }
+export interface CodeEditorProps {
+  readonly value: string;
+  readonly language: EditorLanguage;
+  readonly readOnly: boolean;
+  readonly theme: 'light' | 'dark';
+  readonly onChange?: (next: string) => void;
+  readonly ariaLabel: string;
 }
 
-export function CodeEditor({
-  value,
-  language,
-  readOnly,
-  theme,
-  onChange,
-  ariaLabel,
-}: {
-  value: string;
-  language: EditorLanguage;
-  readOnly: boolean;
-  theme: 'light' | 'dark';
-  onChange?: (next: string) => void;
-  ariaLabel: string;
-}): ReactElement {
+const JsonEditor = lazy(() => import('./editors/JsonEditor.js'));
+const MarkdownEditor = lazy(() => import('./editors/MarkdownEditor.js'));
+const TextEditor = lazy(() => import('./editors/TextEditor.js'));
+const YamlEditor = lazy(() => import('./editors/YamlEditor.js'));
+
+export function CodeEditor(props: CodeEditorProps): ReactElement {
   return (
-    <div role="group" aria-label={ariaLabel}>
-      <CodeMirror
-        value={value}
-        theme={theme}
-        readOnly={readOnly}
-        editable={!readOnly}
-        height="60vh"
-        extensions={[...extensionsFor(language), EditorView.lineWrapping]}
-        onChange={onChange}
-        basicSetup={{ foldGutter: true, highlightActiveLine: !readOnly }}
-      />
-    </div>
+    <Suspense fallback={<LoadingState label="Loading syntax support…" />}>
+      {props.language === 'json' ? <JsonEditor {...props} /> : null}
+      {props.language === 'markdown' ? <MarkdownEditor {...props} /> : null}
+      {props.language === 'text' ? <TextEditor {...props} /> : null}
+      {props.language === 'yaml' ? <YamlEditor {...props} /> : null}
+    </Suspense>
   );
 }

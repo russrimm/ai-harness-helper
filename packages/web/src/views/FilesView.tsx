@@ -9,11 +9,10 @@
  * credentials, which is precisely the failure this UI exists to prevent.
  */
 
-import { useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
 import { getFile, getScan, putFile, revealFileValue } from '../api/client.js';
 import { Badge, scopeVariant } from '../components/Badge.js';
-import { CodeEditor } from '../components/CodeEditor.js';
 import { FileTree } from '../components/FileTree.js';
 import { EmptyState, ErrorState, LoadingState } from '../components/StatusStates.js';
 import { describeError, useAsync } from '../hooks/useAsync.js';
@@ -21,6 +20,10 @@ import { useTheme } from '../hooks/useTheme.js';
 import { diffLines } from '../lib/diff.js';
 import { SCOPE_LABELS } from '../lib/scope.js';
 import type { FileDocument, RedactionRecord, WriteRefusal } from '../api/types.js';
+
+const CodeEditor = lazy(async () => ({
+  default: (await import('../components/CodeEditor.js')).CodeEditor,
+}));
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -194,6 +197,7 @@ export function FilesView({ initialFileId }: { initialFileId: string | undefined
 
   return (
     <div className="view view-files files-layout">
+      <h2 className="visually-hidden">Files</h2>
       <FileTree tree={scan.data.tree} selectedFileId={initialFileId} />
       <div className="file-detail">
         {!initialFileId ? (
@@ -400,14 +404,16 @@ function FileDetailPanel({
             {!canEdit ? <span className="muted">{doc.readOnlyReason ?? 'Read-only.'}</span> : null}
           </div>
 
-          <CodeEditor
-            value={editing ? editContent : doc.content}
-            language={doc.language}
-            readOnly={!editing}
-            theme={theme}
-            onChange={editing ? onEditContentChange : undefined}
-            ariaLabel={`${file.name} contents, ${editing ? 'editable' : 'read-only'}`}
-          />
+          <Suspense fallback={<LoadingState label="Loading editor…" />}>
+            <CodeEditor
+              value={editing ? editContent : doc.content}
+              language={doc.language}
+              readOnly={!editing}
+              theme={theme}
+              onChange={editing ? onEditContentChange : undefined}
+              ariaLabel={`${file.name} contents, ${editing ? 'editable' : 'read-only'}`}
+            />
+          </Suspense>
         </>
       )}
     </div>
