@@ -10,11 +10,9 @@ agentic harness actually configured to do?** Duplicate and conflicting MCP
 servers, stale instruction files, and forgotten permission rules go unnoticed
 because there is no single place to look.
 
-AI Harness Helper is an **implementation preview** of a local discovery engine
-and authenticated loopback API for those files. The core scanner, parsers,
-inventory, redaction, safe writer, CLI, and HTTP API are implemented. The React
-package currently contains only a placeholder shell, so the browsable editor
-described below is the intended product rather than a shipped UI.
+AI Harness Helper is an **unreleased implementation preview** with a local
+discovery engine, authenticated loopback API, and React browser UI. It is not
+published while distribution and licensing remain unresolved.
 
 ```bash
 npm install
@@ -25,7 +23,7 @@ npm start -- --no-open
 That scans your machine and starts the local API. Nothing is uploaded, there is
 no telemetry, and the tool makes no outbound network requests at all.
 
-## Implemented API capabilities
+## Implemented capabilities
 
 - **Overview** — every tool detected, every file found, and health findings:
   duplicate MCP servers, conflicting definitions, plaintext secrets, empty or
@@ -38,11 +36,11 @@ no telemetry, and the tool makes no outbound network requests at all.
   copilot-instructions, `.cursorrules` and friends in precedence order, plus
   your agents, skills, prompts, chat modes, and commands.
 - **Search** — full-text across everything discovered, honoring redaction.
-- **Export** — the whole harness as JSON or a Markdown report.
+- **Export** — the whole harness as JSON or a Markdown report. Metadata only,
+  with credentials masked, so it is safe to attach to a bug report.
 
-Authenticated API clients can also edit discovered config files in place, with
-backups, validation, and conflict detection. A complete browser client for
-these capabilities is not yet implemented.
+The browser UI can also edit discovered config files in place, with backups,
+validation, conflict detection, and a diff preview.
 
 ## Usage
 
@@ -118,6 +116,9 @@ first-class design constraint rather than an afterthought.
   present, with metadata only. Editing them is blocked outright.
 - Search redacts before matching, so a query cannot be used to confirm a
   secret character by character.
+- Credentials passed on an MCP command line — `--api-key`, `-e TOKEN=...`, or
+  an `?api_key=` query string — are masked in the inventory and in exports, not
+  just the ones declared under `env`.
 - File contents are never logged. There is no telemetry.
 
 See [SECURITY.md](SECURITY.md) for the full threat model.
@@ -135,10 +136,9 @@ through the same chain:
 5. A timestamped backup is written to `~/.ai-harness-helper/backups/`.
 6. The file is replaced atomically via a temporary file and rename.
 
-An editor must use the authenticated **unmasked** document response. Saving
-masked text would write the mask into the real configuration and destroy the
-credentials it was protecting. The browser editor itself is not implemented
-yet.
+The editor uses the authenticated **unmasked** document response. Saving masked
+text would write the mask into the real configuration and destroy the
+credentials it was protecting.
 
 ## Development
 
@@ -165,8 +165,8 @@ The repository is an npm workspaces monorepo:
   parsers, redactor, aggregator, writer. No network, no server, fully unit
   tested against a synthetic fixture home.
 - `packages/cli` — the Fastify API and the `ai-harness-helper` binary.
-- `packages/web` — a placeholder React shell for the planned browser UI. It
-  never touches the filesystem directly.
+- `packages/web` — the React browser UI. It never touches the filesystem
+  directly.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for review expectations and
 [BACKLOG.md](BACKLOG.md) for open decisions.

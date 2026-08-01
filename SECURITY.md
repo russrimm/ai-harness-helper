@@ -48,7 +48,10 @@ machine, so the design assumes an attacker already has some local foothold.
 The server binds `127.0.0.1` only and requires a token generated fresh on each
 run. Tokens are 256 bits of entropy and compared in constant time. This
 prevents accidental or opportunistic unauthenticated access; it does not
-isolate the API from a malicious process running as the same OS user.
+isolate the API from a malicious process running as the same OS user. The
+browser strips the token from the address bar on load and keeps it in
+`sessionStorage`, which prevents referrer and browser-history leakage and
+survives a page reload but not closing the tab.
 
 **A malicious web page driving the API from your browser.**
 `Origin` is validated, so a page on the internet cannot issue authenticated
@@ -68,6 +71,20 @@ support per-value reveal. Editing requires an authenticated raw-document
 response containing the complete file; clients must treat it as sensitive.
 Search redacts before matching, so a query cannot be used as an oracle to
 confirm a secret one character at a time.
+
+**Secrets embedded in MCP command lines.**
+An MCP server definition routinely carries credentials outside of `env` — as a
+`--api-key sk-...` flag, a `-e TOKEN=ghp_...` argument, or an `?api_key=` query
+string on an HTTP transport URL. These are masked in the aggregated inventory
+before it reaches the UI or an export, so every consumer of the inventory sees
+the redacted form. Masking happens before the duplicate/conflict signature is
+computed, so two definitions that differ only by credential are reported as
+duplicates rather than as a spurious conflict.
+
+**Exports.**
+JSON and Markdown exports contain metadata only — no file contents, and
+environment variable names without their values. Combined with the command-line
+masking above, an export is safe to attach to a bug report.
 
 **Credential stores.**
 Files whose entire purpose is to hold live credentials are listed as present

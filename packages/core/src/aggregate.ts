@@ -10,11 +10,10 @@
 import { createHash } from 'node:crypto';
 import { parseContent } from './parsers.js';
 import {
+  REDACTED_PLACEHOLDER,
   detectSecretValue,
   isPlaceholderValue,
   isSecretKey,
-  maskValue,
-  redactText,
 } from './redact.js';
 import type { DiscoveredFile, ScanResult } from './scanner.js';
 import { readRegularText } from './safe-file.js';
@@ -509,9 +508,17 @@ function buildDefinition(
   projectPath: string | undefined,
 ): McpDefinition {
   const command = firstString(raw, ['command', 'cmd', 'executable']);
-  const url = firstString(raw, ['url', 'serverUrl', 'httpUrl', 'endpoint', 'uri']);
+  const rawUrl = firstString(raw, ['url', 'serverUrl', 'httpUrl', 'endpoint', 'uri']);
   const reference = firstString(raw, ['ref', 'reference']);
-  const args = stringArray(raw['args']);
+  const rawArgs = stringArray(raw['args']);
+
+  // Masked before anything downstream sees them, including the signature.
+  // Folding secrets out of the signature is deliberate: two definitions of one
+  // server that differ only by API key are a duplicate, not a conflict — the
+  // same reasoning that keeps `env` out of the signature.
+  const args = maskArgs(rawArgs);
+  const url = rawUrl === undefined ? undefined : maskUrl(rawUrl);
+
   const env = isRecord(raw['env'])
     ? raw['env']
     : isRecord(raw['environment'])
@@ -528,11 +535,9 @@ function buildDefinition(
     (isRecord(raw['metadata']) && raw['metadata']['disabled'] === true);
 
   const hasInlineSecret = containsSecretLiteral(raw);
-  const safeCommand = command === undefined ? undefined : maskInlineText(command);
-  const safeArgs = maskArguments(args);
-  const safeUrl = url === undefined ? undefined : maskUrl(url);
-  const safeReference = reference === undefined ? undefined : maskInlineText(reference);
-  const signature = signatureOf(transport, safeCommand, safeArgs, safeUrl, safeReference);
+  const safeCommand = command === undefined ? undefined : maskScalar(command);
+  const safeReference = reference === undefined ? undefined : maskScalar(reference);
+  const signature = signatureOf(transport, safeCommand, args, url, safeReference);
 
   return {
     fileId: file.id,
@@ -548,8 +553,8 @@ function buildDefinition(
         : {}),
     transport,
     ...(safeCommand !== undefined ? { command: safeCommand } : {}),
-    ...(safeArgs.length > 0 ? { args: safeArgs } : {}),
-    ...(safeUrl !== undefined ? { url: safeUrl } : {}),
+    ...(args.length > 0 ? { args } : {}),
+    ...(url !== undefined ? { url } : {}),
     ...(safeReference !== undefined ? { reference: safeReference } : {}),
     envKeys,
     hasInlineSecret,
@@ -602,47 +607,8 @@ function signatureOf(
   return `sha256:${createHash('sha256').update(canonical).digest('hex')}`;
 }
 
-function maskArguments(args: readonly string[]): string[] {
-  let previousIsSecretFlag = false;
-  return args.map((argument) => {
-    const equals = /^(--?[^=]+)=(.*)$/.exec(argument);
-    if (equals?.[1] !== undefined && equals[2] !== undefined && isSecretFlag(equals[1])) {
-      previousIsSecretFlag = false;
-      return `${equals[1]}=${maskValue(equals[2])}`;
-    }
-
-    if (previousIsSecretFlag) {
-      previousIsSecretFlag = false;
-      return isPlaceholderValue(argument) ? argument : maskValue(argument);
-    }
-
-    previousIsSecretFlag = isSecretFlag(argument);
-    return maskInlineText(argument);
-  });
-}
-
-function isSecretFlag(argument: string): boolean {
-  return isSecretKey(argument.replace(/^-+/, '').replace(/-/g, '_'));
-}
-
-function maskUrl(value: string): string {
-  try {
-    const url = new URL(value);
-    if (url.username.length > 0) url.username = maskValue(decodeURIComponent(url.username));
-    if (url.password.length > 0) url.password = maskValue(decodeURIComponent(url.password));
-    for (const [key, raw] of [...url.searchParams.entries()]) {
-      if (isSecretKey(key) || detectSecretValue(raw) !== undefined) {
-        url.searchParams.set(key, maskValue(raw));
-      }
-    }
-    return maskInlineText(url.toString());
-  } catch {
-    return maskInlineText(value);
-  }
-}
-
-function maskInlineText(value: string): string {
-  return redactText(value).value;
+function maskScalar(value: string): string {
+  return detectSecretValue(value) === undefined ? value : REDACTED_PLACEHOLDER;
 }
 
 /** Strips directory and extension so `npx` and `/usr/bin/npx.cmd` match. */
@@ -650,6 +616,78 @@ function normalizeCommand(command: string | undefined): string {
   if (!command) return '';
   const base = command.split(/[\\/]/).pop() ?? command;
   return base.replace(/\.(exe|cmd|bat|ps1)$/i, '').toLowerCase();
+}
+
+/**
+ * Masks credentials embedded in an argument vector.
+ *
+ * Inline secrets in `args` are common — `-e GITHUB_TOKEN=ghp_…`,
+ * `--api-key sk-…`, `Authorization: Bearer …`. These values reach the MCP
+ * table and the export, both of which users share, so they are masked here
+ * rather than at the view layer: masking in one place means no future caller
+ * of the inventory can leak them by accident.
+ */
+function maskArgs(args: readonly string[]): string[] {
+  let maskNext = false;
+
+  return args.map((arg) => {
+    if (maskNext) {
+      maskNext = false;
+      // A flag-style follower is the next flag, not the flag's value.
+      if (!arg.startsWith('-') && !isPlaceholderValue(arg)) return REDACTED_PLACEHOLDER;
+    }
+
+    // `--api-key=sk-…` and `KEY=value` both split on the first `=`.
+    const equals = arg.indexOf('=');
+    if (equals > 0) {
+      const name = arg.slice(0, equals).replace(/^-+/, '');
+      const value = arg.slice(equals + 1);
+      if (value.length > 0 && !isPlaceholderValue(value)) {
+        if (isSecretKey(name) || detectSecretValue(value) !== undefined) {
+          return `${arg.slice(0, equals)}=${REDACTED_PLACEHOLDER}`;
+        }
+      }
+      return arg;
+    }
+
+    if (isSecretKey(arg.replace(/^-+/, ''))) {
+      maskNext = true;
+      return arg;
+    }
+
+    return detectSecretValue(arg) !== undefined ? REDACTED_PLACEHOLDER : arg;
+  });
+}
+
+/**
+ * Masks credentials carried in a URL's query string or userinfo.
+ *
+ * Hosted MCP endpoints often authenticate with `?api_key=…`, and the path is
+ * kept intact so the server is still recognizable.
+ */
+function maskUrl(url: string): string {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return detectSecretValue(url) !== undefined ? REDACTED_PLACEHOLDER : url;
+  }
+
+  let changed = false;
+  for (const [name, value] of [...parsed.searchParams]) {
+    if (value.length === 0 || isPlaceholderValue(value)) continue;
+    if (isSecretKey(name) || detectSecretValue(value) !== undefined) {
+      parsed.searchParams.set(name, REDACTED_PLACEHOLDER);
+      changed = true;
+    }
+  }
+
+  if (parsed.password !== '') {
+    parsed.password = REDACTED_PLACEHOLDER;
+    changed = true;
+  }
+
+  return changed ? parsed.toString() : url;
 }
 
 function buildMcpEntries(definitions: Map<string, McpDefinition[]>): McpServerEntry[] {

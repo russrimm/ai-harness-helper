@@ -495,11 +495,11 @@ export function redactDocumentText(
 
     // Unquoted YAML/TOML/INI-style assignments, including trailing comments.
     const assignment =
-      /^(\s*(?:-\s*)?)("[^"]+"|'[^']+'|[^:=\s][^:=]*?)(\s*[:=]\s*)((?!["']).*?)(\s+#.*)?$/.exec(
+      /^(\s*(?:-\s*)?)("[^"]+"|'[^']+'|[^:=\s][^:=]*?)(\s*[:=]\s*)((?!["']).*?)(\s*,?\s*(?:#.*)?)$/.exec(
         line,
       );
     if (assignment) {
-      const [, indent, keyToken, separator, rawValue, comment = ''] = assignment;
+      const [, indent, keyToken, separator, rawValue, trailer = ''] = assignment;
       const key = stripKeyQuotes(keyToken?.trim());
       const value = rawValue?.trim() ?? '';
       if (/^["']/.test(value)) return line + entry.terminator;
@@ -507,7 +507,12 @@ export function redactDocumentText(
         blockScalarIndent = indent?.length ?? 0;
         return line + entry.terminator;
       }
-      if (key !== undefined && value.length > 0 && !isPlaceholderValue(value)) {
+      if (
+        key !== undefined &&
+        value.length > 0 &&
+        !isPlaceholderValue(value) &&
+        !isNonSecretLiteral(value)
+      ) {
         const detector = detectSecretValue(value);
         const keyIsSecret = isSecretKey(key);
         const structurallySecret =
@@ -520,7 +525,7 @@ export function redactDocumentText(
             keyIsSecret || structurallySecret ? 'key-name' : 'value-shape',
             keyIsSecret ? undefined : detector,
           );
-          return `${indent}${keyToken}${separator}${maskValue(value)}${comment}${entry.terminator}`;
+          return `${indent}${keyToken}${separator}${maskValue(value)}${trailer}${entry.terminator}`;
         }
       }
     }
@@ -532,12 +537,15 @@ export function redactDocumentText(
       record(lineNumber, undefined, candidate, 'value-shape', detector);
       return maskValue(candidate);
     });
-    const swept = line.replace(/[A-Za-z0-9_\-./+=:~]{16,}/g, (candidate) => {
-      const detector = detectSecretValue(candidate);
-      if (detector === undefined) return candidate;
-      record(lineNumber, undefined, candidate, 'value-shape', detector);
-      return maskValue(candidate);
-    });
+    const swept = line.replace(
+      /[A-Za-z0-9_\-./+=:~]{16,}/g,
+      (candidate, offset: number, whole: string) => {
+        const detector = detectSecretValue(candidate);
+        if (detector === undefined) return candidate;
+        record(lineNumber, nearestKeyBefore(whole, offset), candidate, 'value-shape', detector);
+        return maskValue(candidate);
+      },
+    );
     return swept + entry.terminator;
   });
 
@@ -605,8 +613,37 @@ function unescapeQuoted(value: string, quote: string): string {
   return value.replace(/\\'/g, "'").replace(/\\\\/g, '\\');
 }
 
+/**
+ * Finds the key a secret belongs to when it sits mid-line.
+ *
+ * Inline objects (`"env": { "TOKEN": "sk-…" }`) never match the line-anchored
+ * assignment pattern, so without this the redaction would be labelled only by
+ * line number — two secrets on one line would then be indistinguishable in the
+ * reveal list. Scanning back to the nearest `key:` before the match restores a
+ * meaningful name.
+ */
+function nearestKeyBefore(line: string, offset: number): string | undefined {
+  const before = line.slice(0, offset);
+  const match = /(["']?)([A-Za-z0-9_.\-/]+)\1\s*[:=]\s*["']?[^"':=]*$/.exec(before);
+  return match?.[2];
+}
+
 const PEM_BEGIN = /-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----/;
 const PEM_END = /-----END [A-Z0-9 ]*PRIVATE KEY-----/;
+
+/**
+ * True for values that cannot be a credential no matter what the key says.
+ *
+ * Working on text means a secret-looking key masks whatever follows it, and
+ * that misfires on flags: VS Code writes `"password": true` to mark a prompt
+ * input as masked, which is a boolean, not a password. Only the text pass
+ * needs this — parsed walks already see a boolean rather than a string.
+ */
+function isNonSecretLiteral(value: string): boolean {
+  const trimmed = value.trim().toLowerCase();
+  if (trimmed === 'true' || trimmed === 'false' || trimmed === 'null') return true;
+  return /^-?\d+(\.\d+)?$/.test(trimmed);
+}
 
 /**
  * Splits text into lines while keeping each line's terminator.

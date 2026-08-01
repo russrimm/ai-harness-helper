@@ -40,8 +40,8 @@ outbound network access, any telemetry, and managing or launching MCP servers.
 
 ### P0.2 Interaction model and runtime — RESOLVED
 
-A CLI that scans and starts a loopback API, with a planned browser UI. A pure
-CLI cannot render a whole harness legibly, and a
+A CLI that scans, starts a loopback API, and opens a browser UI. A pure CLI
+cannot render a whole harness legibly, and a
 persistent service is the wrong trust posture for something reading
 credentials.
 
@@ -71,11 +71,10 @@ renders it.
   is out of scope because no content is ever sent to a model; config files are
   parsed as data and rendered as text, never executed.
 
-### P1.1 First end-to-end workflow — PARTIAL
+### P1.1 First end-to-end workflow — RESOLVED
 
-The scan, inventory, redaction, write, CLI, and HTTP boundaries are implemented
-and covered by synthetic fixtures. The React package is still a placeholder,
-so the documented browser workflow is not end to end.
+The scan, inventory, redaction, write, CLI, HTTP, and React browser surfaces are
+implemented. Core and transport behavior are covered by synthetic fixtures.
 
 ### P1.2 CI for the selected stack — RESOLVED
 
@@ -145,9 +144,10 @@ exists.
 
 ### P2.2 Verify user experience and accessibility
 
-**Evidence:** `packages/web/src/App.tsx` is a three-line placeholder. There is
-no implemented navigation, editor, responsive interaction, or meaningful
-accessibility surface to verify yet.
+**Evidence:** the UI has semantic navigation, a skip link, labelled controls,
+keyboard-operable native elements, responsive layouts, and light/dark themes.
+There are no automated browser or accessibility tests, and no independent
+assistive-technology pass has been recorded.
 
 **Acceptance criteria:**
 

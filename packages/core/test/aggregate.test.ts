@@ -564,6 +564,121 @@ describe('aggregate - credential stores', () => {
   });
 });
 
+describe('aggregate - inline credential masking', () => {
+  it('masks a secret passed as a --flag value in args', async () => {
+    fixture.write(
+      '.mcp.json',
+      JSON.stringify({
+        mcpServers: {
+          leaky: {
+            command: 'npx',
+            args: ['server', '--api-key', 'sk-live-abcdefghij0123456789', '--verbose'],
+          },
+        },
+      }),
+    );
+
+    const result = await inventory();
+    const server = result.mcpServers.find((entry) => entry.name === 'leaky');
+
+    expect(server?.definitions[0]?.args).toEqual(['server', '--api-key', '••••••••', '--verbose']);
+    expect(JSON.stringify(result)).not.toContain('sk-live-abcdefghij0123456789');
+  });
+
+  it('masks a secret passed as KEY=value in args', async () => {
+    fixture.write(
+      '.mcp.json',
+      JSON.stringify({
+        mcpServers: {
+          docker: {
+            command: 'docker',
+            args: ['run', '-e', 'GITHUB_TOKEN=ghp_abcdefghijklmnopqrstuvwxyz0123456789', 'img'],
+          },
+        },
+      }),
+    );
+
+    const result = await inventory();
+
+    expect(result.mcpServers[0]?.definitions[0]?.args).toContain('GITHUB_TOKEN=••••••••');
+    expect(JSON.stringify(result)).not.toContain('ghp_abcdefghijklmnopqrstuvwxyz0123456789');
+  });
+
+  it('masks a credential in a URL query string but keeps the endpoint readable', async () => {
+    fixture.write(
+      '.mcp.json',
+      JSON.stringify({
+        mcpServers: {
+          hosted: { type: 'http', url: 'https://mcp.example.com/sse?api_key=sk-live-abcdefghij01' },
+        },
+      }),
+    );
+
+    const result = await inventory();
+    const url = result.mcpServers[0]?.definitions[0]?.url ?? '';
+
+    expect(url).toContain('https://mcp.example.com/sse');
+    expect(url).not.toContain('sk-live-abcdefghij01');
+  });
+
+  it('leaves ordinary args and URLs untouched', async () => {
+    fixture.write(
+      '.mcp.json',
+      JSON.stringify({
+        mcpServers: {
+          plain: {
+            command: 'npx',
+            args: ['-y', '@modelcontextprotocol/server-filesystem', '/tmp/data'],
+          },
+          hosted: { type: 'http', url: 'https://learn.microsoft.com/api/mcp' },
+        },
+      }),
+    );
+
+    const result = await inventory();
+    const plain = result.mcpServers.find((entry) => entry.name === 'plain');
+    const hosted = result.mcpServers.find((entry) => entry.name === 'hosted');
+
+    expect(plain?.definitions[0]?.args).toEqual([
+      '-y',
+      '@modelcontextprotocol/server-filesystem',
+      '/tmp/data',
+    ]);
+    expect(hosted?.definitions[0]?.url).toBe('https://learn.microsoft.com/api/mcp');
+  });
+
+  it('does not mask a documented placeholder', async () => {
+    fixture.write(
+      '.mcp.json',
+      JSON.stringify({
+        mcpServers: {
+          template: { command: 'npx', args: ['--token', '${input:apiKey}'] },
+        },
+      }),
+    );
+
+    const result = await inventory();
+
+    expect(result.mcpServers[0]?.definitions[0]?.args).toEqual(['--token', '${input:apiKey}']);
+  });
+
+  it('treats two definitions differing only by API key as duplicates, not conflicts', async () => {
+    const withKey = (key: string): string =>
+      JSON.stringify({
+        mcpServers: { shared: { command: 'npx', args: ['srv', `--api-key=${key}`] } },
+      });
+
+    fixture.write('.claude/settings.json', withKey('sk-live-aaaaaaaaaaaaaaaaaaaa'));
+    fixture.write('.cursor/mcp.json', withKey('sk-live-bbbbbbbbbbbbbbbbbbbb'));
+
+    const result = await inventory();
+    const shared = result.mcpServers.find((entry) => entry.name === 'shared');
+
+    expect(shared?.duplicated).toBe(true);
+    expect(shared?.conflicting).toBe(false);
+  });
+});
+
 describe('aggregate - summary', () => {
   it('counts what the dashboard needs', async () => {
     fixture.write('.claude/settings.json', samples.claudeSettings);
