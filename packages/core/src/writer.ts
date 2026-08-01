@@ -30,6 +30,10 @@ export type WriteRefusalCode =
   | 'invalid-content'
   | 'hash-mismatch'
   | 'not-found'
+  /** The declaration the caller asked to remove is not in the file. */
+  | 'not-declared'
+  /** The file's format or layout cannot be edited structurally. */
+  | 'unsupported-format'
   | 'write-failed';
 
 /** A write that did not happen, and why. */

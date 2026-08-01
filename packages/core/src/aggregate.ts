@@ -10,6 +10,7 @@
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 
+import { detectMcpOverlaps } from './overlap.js';
 import { parseContent } from './parsers.js';
 import {
   REDACTED_PLACEHOLDER,
@@ -17,6 +18,7 @@ import {
   isPlaceholderValue,
   isSecretKey,
 } from './redact.js';
+import type { McpOverlapGroup } from './overlap.js';
 import type { DiscoveredFile, ScanResult } from './scanner.js';
 import type { ConfigScope, FileFormat, FileKind } from './types.js';
 
@@ -179,6 +181,7 @@ export type FindingSeverity = 'info' | 'warning' | 'error';
 export type FindingCode =
   | 'mcp-duplicate'
   | 'mcp-conflict'
+  | 'mcp-overlap'
   | 'capability-duplicate'
   | 'capability-conflict'
   | 'instruction-duplicate'
@@ -213,6 +216,8 @@ export interface HarnessSummary {
   readonly fileCount: number;
   readonly mcpServerCount: number;
   readonly mcpDefinitionCount: number;
+  /** Groups of differently named servers that appear to do the same job. */
+  readonly mcpOverlapCount: number;
   readonly instructionCount: number;
   readonly capabilityCount: number;
   readonly guardrailCount: number;
@@ -232,6 +237,8 @@ export interface HarnessSummary {
 export interface HarnessInventory {
   readonly summary: HarnessSummary;
   readonly mcpServers: readonly McpServerEntry[];
+  /** Functional overlap between servers with different names. */
+  readonly mcpOverlaps: readonly McpOverlapGroup[];
   readonly instructions: readonly InstructionEntry[];
   readonly capabilities: readonly CapabilityEntry[];
   readonly guardrails: readonly GuardrailEntry[];
@@ -251,8 +258,14 @@ export interface AggregateOptions {
 /** Formats a tool parses strictly, where any syntax error breaks the file. */
 const STRUCTURED_FORMATS = new Set<FileFormat>(['json', 'jsonc', 'toml', 'yaml']);
 
-/** Keys under which tools nest their MCP server maps. */
-const MCP_CONTAINER_KEYS = [
+/**
+ * Keys under which tools nest their MCP server maps.
+ *
+ * Exported because removal has to look in exactly the same places harvesting
+ * does; two lists that could drift apart would mean the UI offering to delete
+ * a server it cannot actually find.
+ */
+export const MCP_CONTAINER_KEYS: readonly string[] = [
   'mcpServers',
   'mcp_servers',
   'servers',
@@ -432,7 +445,8 @@ export async function aggregate(
   }
 
   const mcpServers = buildMcpEntries(mcpDefinitions);
-  findings.push(...mcpFindings(mcpServers));
+  const mcpOverlaps = detectMcpOverlaps(mcpServers);
+  findings.push(...mcpFindings(mcpServers), ...overlapFindings(mcpOverlaps));
 
   const instructions = attachDuplicates(
     instructionDrafts,
@@ -490,6 +504,7 @@ export async function aggregate(
       fileCount: scan.files.length,
       mcpServerCount: mcpServers.length,
       mcpDefinitionCount: definitionCount,
+      mcpOverlapCount: mcpOverlaps.length,
       instructionCount: instructions.length,
       capabilityCount: capabilities.length,
       guardrailCount: guardrails.length,
@@ -502,6 +517,7 @@ export async function aggregate(
       totalBytes: scan.files.reduce((sum, f) => sum + f.size, 0),
     },
     mcpServers,
+    mcpOverlaps,
     instructions,
     capabilities,
     guardrails,
@@ -1046,6 +1062,27 @@ function mcpFindings(entries: readonly McpServerEntry[]): HealthFinding[] {
   }
 
   return findings;
+}
+
+/**
+ * Turns overlap groups into findings for the overview.
+ *
+ * Severity tracks confidence rather than being fixed: "two names, one launch
+ * command" is a real problem worth flagging, whereas "both of these look like
+ * search servers" is an observation, and presenting the two identically would
+ * teach users to ignore both.
+ */
+function overlapFindings(groups: readonly McpOverlapGroup[]): HealthFinding[] {
+  return groups.map((group) => ({
+    id: group.id,
+    code: 'mcp-overlap' as const,
+    severity: group.confidence === 'high' ? ('warning' as const) : ('info' as const),
+    title: group.title,
+    detail: group.detail,
+    fileIds: [...group.fileIds],
+    displayPaths: [...group.displayPaths],
+    remediation: group.remediation,
+  }));
 }
 
 function describeDefinition(definition: McpDefinition): string {

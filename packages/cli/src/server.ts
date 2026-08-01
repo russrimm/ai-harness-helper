@@ -175,6 +175,33 @@ export async function createServer(options: ServerOptions): Promise<HarnessServe
     },
   );
 
+  app.delete<{ Params: { id: string; name: string }; Body?: { expectedHash?: string } }>(
+    '/api/files/:id/mcp/:name',
+    async (request, reply) => {
+      if (service.readOnly) {
+        return reply.code(403).send({ error: 'This session is read-only.', code: 'read-only' });
+      }
+      const serverName = request.params.name;
+      if (serverName.length === 0) {
+        return reply.code(400).send({ error: 'A server name is required.' });
+      }
+
+      const expectedHash = request.body?.expectedHash;
+      if (expectedHash !== undefined && typeof expectedHash !== 'string') {
+        return reply.code(400).send({ error: 'expectedHash must be a string when supplied.' });
+      }
+
+      const outcome = await service.removeMcpServer(request.params.id, serverName, expectedHash);
+      if (!outcome) {
+        return reply.code(404).send({ error: 'No such file, or it is not in the scanned set.' });
+      }
+      if (!outcome.ok) {
+        return reply.code(statusForRefusal(outcome.code)).send(outcome);
+      }
+      return outcome;
+    },
+  );
+
   app.get('/api/projects', async () => ({ roots: service.projectRoots }));
 
   app.post<{ Body: { path?: string } }>('/api/projects', async (request, reply) => {
@@ -251,10 +278,12 @@ function statusForRefusal(code: string): number {
     case 'credential-store':
       return 403;
     case 'invalid-content':
+    case 'unsupported-format':
       return 422;
     case 'hash-mismatch':
       return 409;
     case 'not-found':
+    case 'not-declared':
       return 404;
     default:
       return 500;

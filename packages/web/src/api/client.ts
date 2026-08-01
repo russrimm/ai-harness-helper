@@ -10,6 +10,7 @@ import type {
   FileDocument,
   HarnessInventory,
   HealthResponse,
+  McpRemovalOutcome,
   OverviewResponse,
   ProjectsResponse,
   ScanResponse,
@@ -210,6 +211,30 @@ export async function putFile(
 
 export function getProjects(): Promise<ProjectsResponse> {
   return request('/api/projects');
+}
+
+/**
+ * Deletes one MCP server declaration from one file.
+ *
+ * Mirrors {@link putFile} in returning its refusal shape rather than throwing:
+ * "that server is not in this file any more" and "this session is read-only"
+ * are answers the user needs to read, not transport failures.
+ */
+export async function deleteMcpServer(
+  fileId: string,
+  serverName: string,
+): Promise<McpRemovalOutcome> {
+  const response = await fetchOrThrow(
+    `/api/files/${encodeURIComponent(fileId)}/mcp/${encodeURIComponent(serverName)}`,
+    { method: 'DELETE', headers: { 'x-harness-token': token } },
+  );
+  const body = await readJson(response);
+  if (body && typeof body === 'object' && 'ok' in body) return body as McpRemovalOutcome;
+  const message =
+    body && typeof body === 'object' && 'error' in body && typeof body.error === 'string'
+      ? body.error
+      : `Removing "${serverName}" failed with status ${response.status}.`;
+  return { ok: false, code: 'write-failed', message };
 }
 
 export function addProject(path: string): Promise<ProjectsResponse> {
