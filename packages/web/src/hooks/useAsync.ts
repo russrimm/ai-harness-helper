@@ -4,11 +4,13 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ApiError } from '../api/client.js';
+import { ApiError, NetworkError } from '../api/client.js';
 
 export interface AsyncState<T> {
   data: T | undefined;
   error: string | undefined;
+  /** False when retrying in this tab cannot possibly succeed. */
+  retryable: boolean;
   loading: boolean;
   reload: () => void;
 }
@@ -16,6 +18,7 @@ export interface AsyncState<T> {
 export function useAsync<T>(load: () => Promise<T>, deps: readonly unknown[]): AsyncState<T> {
   const [data, setData] = useState<T | undefined>(undefined);
   const [error, setError] = useState<string | undefined>(undefined);
+  const [retryable, setRetryable] = useState(true);
   const [loading, setLoading] = useState(true);
   const [tick, setTick] = useState(0);
   const loadRef = useRef(load);
@@ -25,6 +28,7 @@ export function useAsync<T>(load: () => Promise<T>, deps: readonly unknown[]): A
     let cancelled = false;
     setLoading(true);
     setError(undefined);
+    setRetryable(true);
 
     loadRef
       .current()
@@ -32,7 +36,9 @@ export function useAsync<T>(load: () => Promise<T>, deps: readonly unknown[]): A
         if (!cancelled) setData(result);
       })
       .catch((caught: unknown) => {
-        if (!cancelled) setError(describeError(caught));
+        if (cancelled) return;
+        setError(describeError(caught));
+        setRetryable(isRetryable(caught));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -46,10 +52,33 @@ export function useAsync<T>(load: () => Promise<T>, deps: readonly unknown[]): A
 
   const reload = useCallback(() => setTick((value) => value + 1), []);
 
-  return { data, error, loading, reload };
+  return { data, error, retryable, loading, reload };
+}
+
+/**
+ * Whether offering a retry is honest.
+ *
+ * Both cases below are unrecoverable from inside an already-loaded tab, and a
+ * button that cannot work is worse than no button: it invites the user to
+ * click repeatedly instead of reading the instruction that would fix things.
+ */
+export function isRetryable(error: unknown): boolean {
+  if (error instanceof NetworkError) return false;
+  if (error instanceof ApiError && error.status === 401) return false;
+  return true;
 }
 
 export function describeError(error: unknown): string {
+  // The server is gone, so this tab is a snapshot of a session that ended.
+  // Restarting mints a new token, which is why reloading here is not enough.
+  if (error instanceof NetworkError) {
+    return (
+      'The ai-harness-helper server is no longer running, so this page has ' +
+      'nothing to talk to. Start it again with `ai-harness-helper` in your ' +
+      'terminal and open the fresh link it prints — the token changes every run.'
+    );
+  }
+
   // A 401 here almost always means the page was reloaded in a tab that never
   // carried the token, or the CLI was restarted and issued a new one. Neither
   // is fixable by retrying, so the message says what actually works.

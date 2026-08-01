@@ -173,7 +173,10 @@ export function SearchView({ initialQuery }: { initialQuery: string }): ReactEle
         ) : results.loading ? (
           <LoadingState label="Searching…" />
         ) : results.error ? (
-          <ErrorState message={results.error} onRetry={results.reload} />
+          <ErrorState
+            message={results.error}
+            {...(results.retryable ? { onRetry: results.reload } : {})}
+          />
         ) : !results.data || results.data.hits.length === 0 ? (
           <EmptyState
             title="No matches found."

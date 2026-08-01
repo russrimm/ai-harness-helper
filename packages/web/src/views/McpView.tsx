@@ -37,7 +37,14 @@ export function McpView(): ReactElement {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   if (inventory.loading) return <LoadingState label="Loading MCP servers…" />;
-  if (inventory.error) return <ErrorState message={inventory.error} onRetry={inventory.reload} />;
+  if (inventory.error) {
+    return (
+      <ErrorState
+        message={inventory.error}
+        {...(inventory.retryable ? { onRetry: inventory.reload } : {})}
+      />
+    );
+  }
   if (!inventory.data) return <EmptyState title="No data available." />;
 
   const servers = inventory.data.mcpServers;

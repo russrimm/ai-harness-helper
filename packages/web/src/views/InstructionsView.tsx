@@ -30,7 +30,14 @@ export function InstructionsView(): ReactElement {
   const inventory = useAsync(getInventory, []);
 
   if (inventory.loading) return <LoadingState label="Loading instructions…" />;
-  if (inventory.error) return <ErrorState message={inventory.error} onRetry={inventory.reload} />;
+  if (inventory.error) {
+    return (
+      <ErrorState
+        message={inventory.error}
+        {...(inventory.retryable ? { onRetry: inventory.reload } : {})}
+      />
+    );
+  }
   if (!inventory.data) return <EmptyState title="No data available." />;
 
   const { instructions, capabilities, guardrails } = inventory.data;
