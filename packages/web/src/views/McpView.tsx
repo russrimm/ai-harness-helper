@@ -224,44 +224,51 @@ export function McpView(): ReactElement {
 
       <OverlapPanel groups={overlaps} />
 
-      <table className="mcp-table">
-        <caption className="visually-hidden">MCP servers by name, status, and source</caption>
-        <thead>
-          <tr>
-            <th scope="col" aria-hidden="true"></th>
-            <th scope="col">Name</th>
-            <th scope="col">Status</th>
-            <th scope="col">Overlaps</th>
-            <th scope="col">Transport</th>
-            <th scope="col">Defined by</th>
-            <th scope="col">Directories</th>
-            <th scope="col">Command / URL</th>
-            <th scope="col">Env vars</th>
-            <th scope="col">Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {servers.map((server) => (
-            <ServerRow
-              key={server.name}
-              server={server}
-              status={serverStatus(server)}
-              isOpen={expanded.has(server.name)}
-              onToggle={() => toggle(server.name)}
-              overlaps={overlapsByServer.get(server.name) ?? []}
-              readOnly={health.readOnly}
-              confirming={confirming === server.name}
-              busy={busy === server.name}
-              onRequestRemove={() => {
-                setNotice(undefined);
-                setConfirming(server.name);
-              }}
-              onCancelRemove={() => setConfirming(undefined)}
-              onRemove={(targets) => void remove(server.name, targets)}
-            />
-          ))}
-        </tbody>
-      </table>
+      <div
+        className="table-scroll mcp-table-scroll"
+        role="region"
+        aria-label="MCP servers by name, status, and source"
+        tabIndex={0}
+      >
+        <table className="mcp-table">
+          <caption className="visually-hidden">MCP servers by name, status, and source</caption>
+          <thead>
+            <tr>
+              <th scope="col" aria-hidden="true"></th>
+              <th scope="col">Name</th>
+              <th scope="col">Status</th>
+              <th scope="col">Overlaps</th>
+              <th scope="col">Transport</th>
+              <th scope="col">Defined by</th>
+              <th scope="col">Directories</th>
+              <th scope="col">Command / URL</th>
+              <th scope="col">Env vars</th>
+              <th scope="col">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {servers.map((server) => (
+              <ServerRow
+                key={server.name}
+                server={server}
+                status={serverStatus(server)}
+                isOpen={expanded.has(server.name)}
+                onToggle={() => toggle(server.name)}
+                overlaps={overlapsByServer.get(server.name) ?? []}
+                readOnly={health.readOnly}
+                confirming={confirming === server.name}
+                busy={busy === server.name}
+                onRequestRemove={() => {
+                  setNotice(undefined);
+                  setConfirming(server.name);
+                }}
+                onCancelRemove={() => setConfirming(undefined)}
+                onRemove={(targets) => void remove(server.name, targets)}
+              />
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
@@ -306,40 +313,47 @@ function OverlapPanel({ groups }: { groups: readonly McpOverlapGroup[] }): React
               <h4>{group.title}</h4>
             </div>
             <p className="overlap-detail">{group.detail}</p>
-            <table className="overlap-members">
-              <caption className="visually-hidden">Servers in this overlap group</caption>
-              <thead>
-                <tr>
-                  <th scope="col">Server</th>
-                  <th scope="col">Evidence</th>
-                  <th scope="col">Defined by</th>
-                  <th scope="col">Files</th>
-                </tr>
-              </thead>
-              <tbody>
-                {group.members.map((member) => (
-                  <tr key={member.serverName}>
-                    <th scope="row">
-                      {member.serverName}{' '}
-                      {member.disabled ? <Badge variant="disabled">Disabled</Badge> : null}
-                    </th>
-                    <td className="mcp-target">{member.evidence}</td>
-                    <td>{member.providerNames.join(', ')}</td>
-                    <td>
-                      <ul className="plain-list">
-                        {member.fileIds.map((fileId, position) => (
-                          <li key={fileId}>
-                            <a href={`#/files/${encodeURIComponent(fileId)}`}>
-                              <code>{member.displayPaths[position] ?? fileId}</code>
-                            </a>
-                          </li>
-                        ))}
-                      </ul>
-                    </td>
+            <div
+              className="table-scroll overlap-table-scroll"
+              role="region"
+              aria-label={`${group.title} member servers`}
+              tabIndex={0}
+            >
+              <table className="overlap-members">
+                <caption className="visually-hidden">Servers in this overlap group</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Server</th>
+                    <th scope="col">Evidence</th>
+                    <th scope="col">Defined by</th>
+                    <th scope="col">Files</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {group.members.map((member) => (
+                    <tr key={member.serverName}>
+                      <th scope="row">
+                        {member.serverName}{' '}
+                        {member.disabled ? <Badge variant="disabled">Disabled</Badge> : null}
+                      </th>
+                      <td className="mcp-target">{member.evidence}</td>
+                      <td>{member.providerNames.join(', ')}</td>
+                      <td>
+                        <ul className="plain-list">
+                          {member.fileIds.map((fileId, position) => (
+                            <li key={fileId}>
+                              <a href={`#/files/${encodeURIComponent(fileId)}`}>
+                                <code>{member.displayPaths[position] ?? fileId}</code>
+                              </a>
+                            </li>
+                          ))}
+                        </ul>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
             <p className="finding-remediation">{group.remediation}</p>
           </li>
         ))}
@@ -475,54 +489,63 @@ function ServerRow({
         <tr id={`mcp-defs-${id}`}>
           <td></td>
           <td colSpan={9}>
-            <table className="mcp-definitions-table">
-              <caption className="visually-hidden">Every definition of {server.name}</caption>
-              <thead>
-                <tr>
-                  <th scope="col">Tool</th>
-                  <th scope="col">Location</th>
-                  <th scope="col">Scope</th>
-                  <th scope="col">Directory</th>
-                  <th scope="col">File</th>
-                  <th scope="col">Transport</th>
-                  <th scope="col">Command / URL / reference</th>
-                  <th scope="col">Env vars</th>
-                  <th scope="col">Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {server.definitions.map((definition, index) => (
-                  <tr key={`${definition.fileId}-${index}`}>
-                    <td>{definition.providerName}</td>
-                    <td>{definition.locationLabel}</td>
-                    <td>{SCOPE_LABELS[definition.scope]}</td>
-                    <td className="mcp-directory">
-                      <code title={definition.displayPath}>{definition.directory}</code>
-                    </td>
-                    <td>
-                      <a href={`#/files/${encodeURIComponent(definition.fileId)}`}>
-                        {definition.fileName}
-                      </a>
-                    </td>
-                    <td>{definition.transport}</td>
-                    <td className="mcp-target">
-                      {definition.command ?? definition.url ?? definition.reference ?? DASH}
-                    </td>
-                    <td>{definition.envKeys.length > 0 ? definition.envKeys.join(', ') : DASH}</td>
-                    <td>
-                      {definition.disabled ? (
-                        <Badge variant="disabled">Disabled</Badge>
-                      ) : (
-                        <Badge variant="ok">Active</Badge>
-                      )}
-                      {definition.hasInlineSecret ? (
-                        <Badge variant="warning">Inline secret</Badge>
-                      ) : null}
-                    </td>
+            <div
+              className="table-scroll mcp-definitions-scroll"
+              role="region"
+              aria-label={`Every definition of ${server.name}`}
+              tabIndex={0}
+            >
+              <table className="mcp-definitions-table">
+                <caption className="visually-hidden">Every definition of {server.name}</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Tool</th>
+                    <th scope="col">Location</th>
+                    <th scope="col">Scope</th>
+                    <th scope="col">Directory</th>
+                    <th scope="col">File</th>
+                    <th scope="col">Transport</th>
+                    <th scope="col">Command / URL / reference</th>
+                    <th scope="col">Env vars</th>
+                    <th scope="col">Status</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {server.definitions.map((definition, index) => (
+                    <tr key={`${definition.fileId}-${index}`}>
+                      <td>{definition.providerName}</td>
+                      <td>{definition.locationLabel}</td>
+                      <td>{SCOPE_LABELS[definition.scope]}</td>
+                      <td className="mcp-directory">
+                        <code title={definition.displayPath}>{definition.directory}</code>
+                      </td>
+                      <td>
+                        <a href={`#/files/${encodeURIComponent(definition.fileId)}`}>
+                          {definition.fileName}
+                        </a>
+                      </td>
+                      <td>{definition.transport}</td>
+                      <td className="mcp-target">
+                        {definition.command ?? definition.url ?? definition.reference ?? DASH}
+                      </td>
+                      <td>
+                        {definition.envKeys.length > 0 ? definition.envKeys.join(', ') : DASH}
+                      </td>
+                      <td>
+                        {definition.disabled ? (
+                          <Badge variant="disabled">Disabled</Badge>
+                        ) : (
+                          <Badge variant="ok">Active</Badge>
+                        )}
+                        {definition.hasInlineSecret ? (
+                          <Badge variant="warning">Inline secret</Badge>
+                        ) : null}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </td>
         </tr>
       ) : null}
