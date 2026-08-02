@@ -11,6 +11,7 @@ import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 
 import { detectMcpOverlaps } from './overlap.js';
+import { mapConcurrent } from './concurrency.js';
 import { parseContent } from './parsers.js';
 import {
   REDACTED_PLACEHOLDER,
@@ -283,6 +284,7 @@ const MCP_BEARING_KINDS = new Set<FileKind>(['mcp', 'settings', 'extension']);
 
 /** Kinds that represent an invocable capability. */
 const CAPABILITY_KINDS = new Set<FileKind>(['agent', 'skill', 'command', 'prompt', 'chatmode']);
+const FILE_READ_CONCURRENCY = 8;
 
 /** Kinds that represent behavioural guidance. */
 const INSTRUCTION_KINDS = new Set<FileKind>(['instructions']);
@@ -308,8 +310,14 @@ export async function aggregate(
   const parsedFileIds: string[] = [];
   /** Content digests keyed by file id, used to tell a copy from a conflict. */
   const contentHashes = new Map<string, string>();
+  const contents = await mapConcurrent(scan.files, FILE_READ_CONCURRENCY, async (file) => {
+    if (file.sensitivity === 'credential-store') return undefined;
+    return load(file);
+  });
 
-  for (const file of scan.files) {
+  for (let index = 0; index < scan.files.length; index += 1) {
+    const file = scan.files[index];
+    if (!file) continue;
     if (file.sensitivity === 'credential-store') {
       findings.push({
         id: `credential-store:${file.id}`,
@@ -336,7 +344,7 @@ export async function aggregate(
       });
     }
 
-    const text = await load(file);
+    const text = contents[index];
     if (text === undefined) continue;
 
     if (text.trim().length === 0) {

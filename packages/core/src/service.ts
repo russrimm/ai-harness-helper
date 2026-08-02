@@ -18,6 +18,7 @@ import {
   type CapabilityDocumentBody,
 } from './capability-doc.js';
 import { removeMcpServerFromText } from './mcp-edit.js';
+import { mapConcurrent } from './concurrency.js';
 import { editorLanguage, parseContent, type ParseIssue } from './parsers.js';
 import { createEnvironment, selectPlatformTemplates, toDisplayPath } from './paths.js';
 import {
@@ -299,6 +300,7 @@ export const MAX_DOCUMENT_BYTES = 2 * 1024 * 1024;
 
 /** Default cap on search hits, to keep responses bounded. */
 const DEFAULT_SEARCH_LIMIT = 200;
+const FILE_READ_CONCURRENCY = 8;
 
 export class HarnessService {
   readonly #environment: ResolverEnvironment;
@@ -815,17 +817,20 @@ export class HarnessService {
     const capabilities: CapabilitySummary[] = [];
     const models = new Set<string>();
     const tools = new Set<string>();
-
-    for (const file of result.files) {
-      if (!this.#isCapabilityFile(file)) continue;
-
-      let parsed: ReturnType<typeof parseCapabilityDocument> | undefined;
+    const files = result.files.filter((file) => this.#isCapabilityFile(file));
+    const parsedDocuments = await mapConcurrent(files, FILE_READ_CONCURRENCY, async (file) => {
       try {
-        parsed = parseCapabilityDocument(await readFile(file.path, 'utf8'));
+        return parseCapabilityDocument(await readFile(file.path, 'utf8'));
       } catch {
-        // An unreadable file is still worth listing: the row explains why it
-        // cannot be opened, which beats it vanishing from the list entirely.
+        // An unreadable file is still listed below with a reason.
+        return undefined;
       }
+    });
+
+    for (let index = 0; index < files.length; index += 1) {
+      const file = files[index];
+      if (!file) continue;
+      const parsed = parsedDocuments[index];
 
       const blocked = this.#editBlockReason(file);
       if (parsed?.model) models.add(parsed.model);
