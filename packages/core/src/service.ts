@@ -295,7 +295,7 @@ export interface CapabilityEdit {
 }
 
 /** Maximum bytes of a single file returned to the client. */
-const MAX_DOCUMENT_BYTES = 2 * 1024 * 1024;
+export const MAX_DOCUMENT_BYTES = 2 * 1024 * 1024;
 
 /** Default cap on search hits, to keep responses bounded. */
 const DEFAULT_SEARCH_LIMIT = 200;

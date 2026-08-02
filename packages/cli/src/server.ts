@@ -15,7 +15,7 @@ import { randomBytes, timingSafeEqual } from 'node:crypto';
 
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 import fastifyStatic from '@fastify/static';
-import { type HarnessService } from '@ai-harness-helper/core';
+import { MAX_DOCUMENT_BYTES, type HarnessService } from '@ai-harness-helper/core';
 
 export interface ServerOptions {
   readonly service: HarnessService;
@@ -47,6 +47,13 @@ function tokensMatch(provided: string, expected: string): boolean {
 
 /** Hosts a browser may legitimately present for a loopback server. */
 const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]', '::1']);
+const MAX_REQUEST_OVERHEAD_BYTES = 64 * 1024;
+const MAX_IDENTIFIER_CHARS = 256;
+const MAX_PATH_CHARS = 4096;
+const MAX_SEARCH_QUERY_CHARS = 512;
+const MAX_FILTER_VALUES = 64;
+const MAX_CAPABILITY_DESCRIPTION_CHARS = 4096;
+const MAX_CAPABILITY_TOOLS = 256;
 
 function hostIsLoopback(header: string | undefined): boolean {
   if (!header) return false;
@@ -70,8 +77,8 @@ export async function createServer(options: ServerOptions): Promise<HarnessServe
 
   const app = Fastify({
     logger: false,
-    // Config files are small; a low cap limits the damage of a rogue client.
-    bodyLimit: 8 * 1024 * 1024,
+    // Leave room for JSON quoting around one maximum-sized document.
+    bodyLimit: MAX_DOCUMENT_BYTES + MAX_REQUEST_OVERHEAD_BYTES,
   });
 
   app.addHook('onRequest', async (request: FastifyRequest, reply: FastifyReply) => {
@@ -91,7 +98,7 @@ export async function createServer(options: ServerOptions): Promise<HarnessServe
 
     const provided = extractToken(request);
     if (!provided || !tokensMatch(provided, token)) {
-      await reply.code(401).send({ error: 'Missing or invalid token.' });
+      return reply.code(401).send({ error: 'Missing or invalid token.' });
     }
   });
 
@@ -145,6 +152,11 @@ export async function createServer(options: ServerOptions): Promise<HarnessServe
       if (typeof redactionId !== 'string') {
         return reply.code(400).send({ error: 'redactionId is required.' });
       }
+      if (redactionId.length === 0 || redactionId.length > MAX_IDENTIFIER_CHARS) {
+        return reply
+          .code(400)
+          .send({ error: `redactionId must be 1-${MAX_IDENTIFIER_CHARS} characters.` });
+      }
       const value = await service.revealValue(request.params.id, redactionId);
       if (value === undefined) {
         return reply.code(404).send({ error: 'That value could not be revealed.' });
@@ -162,6 +174,16 @@ export async function createServer(options: ServerOptions): Promise<HarnessServe
       const { content, expectedHash } = request.body ?? {};
       if (typeof content !== 'string' || typeof expectedHash !== 'string') {
         return reply.code(400).send({ error: 'content and expectedHash are required.' });
+      }
+      if (Buffer.byteLength(content, 'utf8') > MAX_DOCUMENT_BYTES) {
+        return reply
+          .code(413)
+          .send({ error: `content must be no larger than ${MAX_DOCUMENT_BYTES} bytes.` });
+      }
+      if (expectedHash.length === 0 || expectedHash.length > MAX_IDENTIFIER_CHARS) {
+        return reply
+          .code(400)
+          .send({ error: `expectedHash must be 1-${MAX_IDENTIFIER_CHARS} characters.` });
       }
 
       const outcome = await service.writeDocument(request.params.id, content, expectedHash);
@@ -182,13 +204,23 @@ export async function createServer(options: ServerOptions): Promise<HarnessServe
         return reply.code(403).send({ error: 'This session is read-only.', code: 'read-only' });
       }
       const serverName = request.params.name;
-      if (serverName.length === 0) {
-        return reply.code(400).send({ error: 'A server name is required.' });
+      if (serverName.length === 0 || serverName.length > MAX_IDENTIFIER_CHARS) {
+        return reply
+          .code(400)
+          .send({ error: `Server name must be 1-${MAX_IDENTIFIER_CHARS} characters.` });
       }
 
       const expectedHash = request.body?.expectedHash;
       if (expectedHash !== undefined && typeof expectedHash !== 'string') {
         return reply.code(400).send({ error: 'expectedHash must be a string when supplied.' });
+      }
+      if (
+        typeof expectedHash === 'string' &&
+        (expectedHash.length === 0 || expectedHash.length > MAX_IDENTIFIER_CHARS)
+      ) {
+        return reply
+          .code(400)
+          .send({ error: `expectedHash must be 1-${MAX_IDENTIFIER_CHARS} characters.` });
       }
 
       const outcome = await service.removeMcpServer(request.params.id, serverName, expectedHash);
@@ -238,6 +270,11 @@ export async function createServer(options: ServerOptions): Promise<HarnessServe
     if (typeof payload.expectedHash !== 'string') {
       return reply.code(400).send({ error: 'expectedHash is required.' });
     }
+    if (payload.expectedHash.length === 0 || payload.expectedHash.length > MAX_IDENTIFIER_CHARS) {
+      return reply
+        .code(400)
+        .send({ error: `expectedHash must be 1-${MAX_IDENTIFIER_CHARS} characters.` });
+    }
 
     const edit = readCapabilityEdit(payload);
     if ('error' in edit) {
@@ -267,6 +304,11 @@ export async function createServer(options: ServerOptions): Promise<HarnessServe
     if (typeof path !== 'string' || path.length === 0) {
       return reply.code(400).send({ error: 'path is required.' });
     }
+    if (path.length > MAX_PATH_CHARS || path.includes('\0')) {
+      return reply
+        .code(400)
+        .send({ error: `path must be no longer than ${MAX_PATH_CHARS} characters.` });
+    }
     return { roots: await service.addProjectRoot(path) };
   });
 
@@ -275,17 +317,36 @@ export async function createServer(options: ServerOptions): Promise<HarnessServe
     if (typeof path !== 'string' || path.length === 0) {
       return reply.code(400).send({ error: 'path is required.' });
     }
+    if (path.length > MAX_PATH_CHARS || path.includes('\0')) {
+      return reply
+        .code(400)
+        .send({ error: `path must be no longer than ${MAX_PATH_CHARS} characters.` });
+    }
     return { roots: await service.removeProjectRoot(path) };
   });
 
   app.get<{
     Querystring: { q?: string; provider?: string; kind?: string; scope?: string };
-  }>('/api/search', async (request) => {
+  }>('/api/search', async (request, reply) => {
+    const query = request.query.q ?? '';
+    if (query.length > MAX_SEARCH_QUERY_CHARS) {
+      return reply
+        .code(400)
+        .send({ error: `q must be no longer than ${MAX_SEARCH_QUERY_CHARS} characters.` });
+    }
+    const providerIds = splitList(request.query.provider);
+    const kinds = splitList(request.query.kind);
+    const scopes = splitList(request.query.scope);
+    if (providerIds === null || kinds === null || scopes === null) {
+      return reply
+        .code(400)
+        .send({ error: `Each filter accepts at most ${MAX_FILTER_VALUES} values.` });
+    }
     return service.search({
-      query: request.query.q ?? '',
-      providerIds: splitList(request.query.provider),
-      kinds: splitList(request.query.kind),
-      scopes: splitList(request.query.scope),
+      query,
+      providerIds,
+      kinds,
+      scopes,
     });
   });
 
@@ -316,7 +377,7 @@ export async function createServer(options: ServerOptions): Promise<HarnessServe
   return { app, token };
 }
 
-/** Accepts the token from a header, a bearer credential, or the query string. */
+/** Accepts API credentials only from headers so request URLs never carry them. */
 function extractToken(request: FastifyRequest): string | undefined {
   const header = request.headers['x-harness-token'];
   if (typeof header === 'string' && header.length > 0) return header;
@@ -326,8 +387,7 @@ function extractToken(request: FastifyRequest): string | undefined {
     return authorization.slice('Bearer '.length);
   }
 
-  const query = (request.query as { token?: unknown } | undefined)?.token;
-  return typeof query === 'string' && query.length > 0 ? query : undefined;
+  return undefined;
 }
 
 /**
@@ -360,12 +420,30 @@ function readCapabilityEdit(payload: {
     const value = payload[key];
     if (value === undefined) continue;
     if (typeof value !== 'string') return { error: `${key} must be a string.` };
+    const max =
+      key === 'body'
+        ? MAX_DOCUMENT_BYTES
+        : key === 'description'
+          ? MAX_CAPABILITY_DESCRIPTION_CHARS
+          : MAX_IDENTIFIER_CHARS;
+    const size = key === 'body' ? Buffer.byteLength(value, 'utf8') : value.length;
+    if (size > max) {
+      return {
+        error: `${key} must be no longer than ${max} ${key === 'body' ? 'bytes' : 'characters'}.`,
+      };
+    }
     edit[key] = value;
   }
 
   if (payload.tools !== undefined) {
     if (!Array.isArray(payload.tools) || payload.tools.some((item) => typeof item !== 'string')) {
       return { error: 'tools must be an array of strings.' };
+    }
+    if (payload.tools.length > MAX_CAPABILITY_TOOLS) {
+      return { error: `tools must contain at most ${MAX_CAPABILITY_TOOLS} entries.` };
+    }
+    if (payload.tools.some((item) => (item as string).length > MAX_IDENTIFIER_CHARS)) {
+      return { error: `Each tool must be no longer than ${MAX_IDENTIFIER_CHARS} characters.` };
     }
     edit.tools = payload.tools as string[];
   }
@@ -391,11 +469,17 @@ function statusForRefusal(code: string): number {
   }
 }
 
-function splitList(value: string | undefined): string[] | undefined {
+function splitList(value: string | undefined): string[] | undefined | null {
   if (!value) return undefined;
   const parts = value
     .split(',')
     .map((part) => part.trim())
     .filter((part) => part.length > 0);
+  if (
+    parts.length > MAX_FILTER_VALUES ||
+    parts.some((part) => part.length > MAX_IDENTIFIER_CHARS)
+  ) {
+    return null;
+  }
   return parts.length > 0 ? parts : undefined;
 }
