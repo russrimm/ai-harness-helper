@@ -194,6 +194,7 @@ export interface SourcesResult {
 export interface HarnessServiceOptions {
   readonly environment?: ResolverEnvironment;
   readonly projectRoots?: readonly string[];
+  readonly projectsOnly?: boolean;
   readonly readOnly?: boolean;
   readonly writerOptions?: WriterOptions;
 }
@@ -304,6 +305,7 @@ const FILE_READ_CONCURRENCY = 8;
 
 export class HarnessService {
   readonly #environment: ResolverEnvironment;
+  readonly #projectsOnly: boolean;
   readonly #readOnly: boolean;
   readonly #writerOptions: WriterOptions;
   #projectRoots: string[];
@@ -314,6 +316,7 @@ export class HarnessService {
 
   constructor(options: HarnessServiceOptions = {}) {
     this.#environment = options.environment ?? createEnvironment();
+    this.#projectsOnly = options.projectsOnly ?? false;
     this.#readOnly = options.readOnly ?? false;
     this.#writerOptions = options.writerOptions ?? {};
     this.#projectRoots = [...(options.projectRoots ?? [])].map((root) => resolve(root));
@@ -332,6 +335,7 @@ export class HarnessService {
     const result = await scan({
       environment: this.#environment,
       projectRoots: this.#projectRoots,
+      projectsOnly: this.#projectsOnly,
     });
     this.#scan = result;
     this.#inventory = await aggregate(result);
@@ -382,9 +386,9 @@ export class HarnessService {
       );
     }
 
-    const providers: SourceProvider[] = registryProviders.map((provider) =>
-      this.#describeProvider(provider, filesByLocation, checkedByLocation),
-    );
+    const providers: SourceProvider[] = registryProviders
+      .map((provider) => this.#describeProvider(provider, filesByLocation, checkedByLocation))
+      .filter((provider) => provider.locations.length > 0);
 
     // Files the sweep found belong to no registry provider, but leaving them
     // out of the source map would hide the very files most likely to surprise
@@ -430,6 +434,7 @@ export class HarnessService {
     const locations: SourceLocation[] = [];
 
     for (const definition of provider.locations) {
+      if (this.#projectsOnly && definition.scope !== 'project') continue;
       const templates = selectPlatformTemplates(definition.paths, this.#environment.platform);
       // A project-scope location is checked once per registered root, so the
       // same definition can legitimately produce several rows.

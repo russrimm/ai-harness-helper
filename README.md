@@ -112,6 +112,7 @@ npx ai-harness-helper [options]
 | ----------------------- | ------------------------------------------------------------- |
 | `-p`, `--port <number>` | Port to listen on. Defaults to the first free port from 7777. |
 | `--project <path>`      | Also scan a project folder. Repeatable.                       |
+| `--projects-only`       | Scan project folders without user or machine configuration.   |
 | `--read-only`           | Disable all editing for this session.                         |
 | `--no-open`             | Do not launch a browser.                                      |
 | `-h`, `--help`          | Show help.                                                    |
@@ -122,6 +123,13 @@ configuration is **opt-in** — the tool never crawls your whole drive:
 
 ```bash
 npx ai-harness-helper --project ~/code/my-app --project ~/code/other-app
+```
+
+To inspect only those project folders, without reading user- or machine-level
+configuration, add `--projects-only`. This mode requires at least one `--project`:
+
+```bash
+npx ai-harness-helper --projects-only --project ~/code/my-app
 ```
 
 ## Supported tools

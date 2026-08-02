@@ -22,6 +22,7 @@ interface Options {
   open: boolean;
   readOnly: boolean;
   projects: string[];
+  projectsOnly: boolean;
   help: boolean;
   version: boolean;
 }
@@ -35,6 +36,7 @@ Usage
 Options
   -p, --port <number>    Port to listen on. Defaults to the first free port from 7777.
       --project <path>   Also scan a project folder. Repeatable.
+      --projects-only    Scan project folders without user or machine configuration.
       --read-only        Disable all editing for this session.
       --no-open          Do not launch a browser.
   -h, --help             Show this help.
@@ -51,6 +53,7 @@ export function parseArgs(argv: readonly string[]): Options {
     open: true,
     readOnly: false,
     projects: [],
+    projectsOnly: false,
     help: false,
     version: false,
   };
@@ -71,6 +74,9 @@ export function parseArgs(argv: readonly string[]): Options {
         break;
       case '--no-open':
         options.open = false;
+        break;
+      case '--projects-only':
+        options.projectsOnly = true;
         break;
       case '-p':
       case '--port': {
@@ -93,6 +99,10 @@ export function parseArgs(argv: readonly string[]): Options {
       default:
         if (arg?.startsWith('-')) throw new Error(`Unknown option "${arg}".`);
     }
+  }
+
+  if (options.projectsOnly && options.projects.length === 0) {
+    throw new Error('--projects-only requires at least one --project <path>.');
   }
 
   return options;
@@ -187,10 +197,15 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
 
   const service = new HarnessService({
     projectRoots: options.projects,
+    projectsOnly: options.projectsOnly,
     readOnly: options.readOnly,
   });
 
-  process.stdout.write('Scanning for agentic harness configuration...\n');
+  process.stdout.write(
+    options.projectsOnly
+      ? 'Scanning project harness configuration only...\n'
+      : 'Scanning for agentic harness configuration...\n',
+  );
   const result = await service.refresh();
   const inventory = await service.getInventory();
 
@@ -206,6 +221,9 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
   process.stdout.write(
     `\n  Found ${result.files.length} files across ${result.detectedProviders.length} tools` +
       ` — ${inventory.summary.mcpServerCount} MCP servers, ${inventory.summary.findingCount} findings.\n` +
+      (options.projectsOnly
+        ? '  Projects only: user and machine configuration was skipped.\n'
+        : '') +
       (options.readOnly ? '  Read-only: editing is disabled.\n' : '') +
       (publicDir ? '' : '  No web bundle found; serving the API only.\n') +
       `\n  ${url}\n\n  Press Ctrl+C to stop.\n`,

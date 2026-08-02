@@ -11,6 +11,7 @@ describe('parseArgs', () => {
       open: true,
       readOnly: false,
       projects: [],
+      projectsOnly: false,
       help: false,
       version: false,
     });
@@ -29,6 +30,18 @@ describe('parseArgs', () => {
   it('accepts repeated project roots and resolves them to absolute paths', () => {
     const options = parseArgs(['--project', 'a', '--project', 'b']);
     expect(options.projects).toEqual([resolve('a'), resolve('b')]);
+  });
+
+  it('enables project-only scanning when a project root is present', () => {
+    const options = parseArgs(['--projects-only', '--project', 'repo']);
+    expect(options.projectsOnly).toBe(true);
+    expect(options.projects).toEqual([resolve('repo')]);
+  });
+
+  it('requires a project root for project-only scanning', () => {
+    expect(() => parseArgs(['--projects-only'])).toThrow(
+      '--projects-only requires at least one --project <path>.',
+    );
   });
 
   it('does not treat a project path as a flag', () => {

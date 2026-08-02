@@ -49,6 +49,24 @@ describe('scanning and inventory', () => {
     expect(tree.length).toBeGreaterThan(0);
     expect(tree.every((group) => group.files.length > 0)).toBe(true);
   });
+
+  it('passes project-only mode through to scans and source descriptions', async () => {
+    const harness = new HarnessService({
+      environment: fixture.environment,
+      projectRoots: [fixture.project],
+      projectsOnly: true,
+    });
+
+    const result = await harness.getScan();
+    expect(result.files.every((file) => file.scope === 'project')).toBe(true);
+
+    const sources = await harness.getSources();
+    expect(
+      sources.providers
+        .flatMap((provider) => provider.locations)
+        .every((location) => location.scope === 'project'),
+    ).toBe(true);
+  });
 });
 
 describe('authorization', () => {
