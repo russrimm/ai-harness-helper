@@ -15,8 +15,8 @@
  *    mid-write cannot leave a truncated config behind.
  */
 
-import { createHash } from 'node:crypto';
-import { copyFile, mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises';
+import { createHash, randomBytes } from 'node:crypto';
+import { chmod, mkdir, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 
@@ -154,8 +154,14 @@ export async function writeConfigFile(
   }
 
   let existing: string | undefined;
+  let existingMode: number | undefined;
   try {
-    existing = await readFile(request.path, 'utf8');
+    const [content, metadata] = await Promise.all([
+      readFile(request.path, 'utf8'),
+      stat(request.path),
+    ]);
+    existing = content;
+    existingMode = metadata.mode & 0o777;
   } catch (error) {
     if (!isNotFound(error)) {
       return {
@@ -201,7 +207,7 @@ export async function writeConfigFile(
   let backupPath = '';
   if (existing !== undefined) {
     try {
-      backupPath = await createBackup(request.path, backupRoot, now);
+      backupPath = await createBackup(request.path, existing, backupRoot, now);
     } catch (error) {
       return {
         ok: false,
@@ -212,7 +218,7 @@ export async function writeConfigFile(
   }
 
   try {
-    await atomicWrite(request.path, request.content);
+    await atomicWrite(request.path, request.content, existingMode);
   } catch (error) {
     return {
       ok: false,
@@ -237,16 +243,28 @@ export async function writeConfigFile(
  * together, and the original file name is preserved so it is obvious what a
  * backup restores to.
  */
-async function createBackup(path: string, backupRoot: string, now: Date): Promise<string> {
+async function createBackup(
+  path: string,
+  content: string,
+  backupRoot: string,
+  now: Date,
+): Promise<string> {
   const stamp = now.toISOString().replace(/[:.]/g, '-');
   const directory = join(backupRoot, stamp);
-  await mkdir(directory, { recursive: true });
+  await mkdir(backupRoot, { recursive: true, mode: 0o700 });
+  await chmod(backupRoot, 0o700);
+  await mkdir(directory, { recursive: true, mode: 0o700 });
+  await chmod(directory, 0o700);
 
   // Two files in one batch can share a name (`settings.json` from two tools),
   // so a short path digest keeps them distinct without deep directory trees.
+  // A nonce preserves both backups when one file is edited twice in a millisecond.
   const discriminator = createHash('sha256').update(path).digest('hex').slice(0, 8);
-  const target = join(directory, `${discriminator}-${basename(path)}`);
-  await copyFile(path, target);
+  const target = join(
+    directory,
+    `${discriminator}-${randomBytes(4).toString('hex')}-${basename(path)}`,
+  );
+  await writeFile(target, content, { encoding: 'utf8', mode: 0o600, flag: 'wx' });
   return target;
 }
 
@@ -257,11 +275,16 @@ async function createBackup(path: string, backupRoot: string, now: Date): Promis
  * with unparseable configuration; a rename is atomic on every platform we
  * support, so the file is either fully old or fully new.
  */
-async function atomicWrite(path: string, content: string): Promise<void> {
-  const temporary = join(dirname(path), `.${basename(path)}.aihh-${process.pid}.tmp`);
+async function atomicWrite(path: string, content: string, existingMode?: number): Promise<void> {
+  const nonce = randomBytes(6).toString('hex');
+  const temporary = join(dirname(path), `.${basename(path)}.aihh-${process.pid}-${nonce}.tmp`);
   await mkdir(dirname(path), { recursive: true });
   try {
-    await writeFile(temporary, content, 'utf8');
+    await writeFile(temporary, content, {
+      encoding: 'utf8',
+      mode: existingMode ?? 0o600,
+      flag: 'wx',
+    });
     await rename(temporary, path);
   } catch (error) {
     await unlink(temporary).catch(() => undefined);

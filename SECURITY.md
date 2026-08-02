@@ -112,8 +112,9 @@ would write the mask into the real file.
 - File contents are never written to logs.
 - Nothing leaves the machine. The only network listener is loopback.
 - Backups written to `~/.ai-harness-helper/backups/` contain the original file
-  contents, including secrets, and inherit the permissions of the directory.
-  Treat that directory as sensitive.
+  contents, including secrets. On POSIX systems the backup directories are
+  restricted to the current user (`0700`) and backup files to owner read/write
+  (`0600`). Treat that directory as sensitive.
 
 ### Running with reduced privilege
 

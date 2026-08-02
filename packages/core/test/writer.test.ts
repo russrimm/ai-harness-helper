@@ -1,4 +1,4 @@
-import { readFileSync, existsSync } from 'node:fs';
+import { chmodSync, readFileSync, existsSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
@@ -197,6 +197,28 @@ describe('writeConfigFile - successful writes', () => {
     }
   });
 
+  it.skipIf(process.platform === 'win32')('restricts backup files and directories', async () => {
+    const path = fixture.write('.cursor/mcp.json', VALID);
+    const now = () => new Date('2024-05-01T12:00:00.000Z');
+
+    const result = await writeConfigFile(
+      {
+        path,
+        content: '{}',
+        format: 'json',
+        sensitivity: 'normal',
+        expectedHash: hashContent(VALID),
+      },
+      { backupRoot, now },
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(statSync(backupRoot).mode & 0o777).toBe(0o700);
+    expect(statSync(join(backupRoot, '2024-05-01T12-00-00-000Z')).mode & 0o777).toBe(0o700);
+    expect(statSync(result.backupPath).mode & 0o777).toBe(0o600);
+  });
+
   it('keeps backups of same-named files from different tools apart', async () => {
     const a = fixture.write('.cursor/settings.json', '{"a":1}');
     const b = fixture.write('.claude/settings.json', '{"b":2}');
@@ -244,6 +266,43 @@ describe('writeConfigFile - successful writes', () => {
     expect(readFileSync(path, 'utf8')).toBe(VALID);
   });
 
+  it.skipIf(process.platform === 'win32')(
+    'creates new files with owner-only permissions',
+    async () => {
+      const path = join(fixture.home, '.cursor', 'mcp.json');
+
+      const result = await writeConfigFile(
+        { path, content: VALID, format: 'json', sensitivity: 'normal', expectedHash: null },
+        { backupRoot },
+      );
+
+      expect(result.ok).toBe(true);
+      expect(statSync(path).mode & 0o777).toBe(0o600);
+    },
+  );
+
+  it.skipIf(process.platform === 'win32')(
+    'preserves an existing file mode during atomic replacement',
+    async () => {
+      const path = fixture.write('.cursor/mcp.json', VALID);
+      chmodSync(path, 0o640);
+
+      const result = await writeConfigFile(
+        {
+          path,
+          content: '{}',
+          format: 'json',
+          sensitivity: 'normal',
+          expectedHash: hashContent(VALID),
+        },
+        { backupRoot },
+      );
+
+      expect(result.ok).toBe(true);
+      expect(statSync(path).mode & 0o777).toBe(0o640);
+    },
+  );
+
   it('allows editing a file that may contain secrets', async () => {
     const path = fixture.write('.claude/settings.json', '{"env":{}}');
 
@@ -275,7 +334,7 @@ describe('writeConfigFile - successful writes', () => {
       { backupRoot },
     );
 
-    expect(existsSync(join(fixture.home, '.cursor', `.mcp.json.aihh-${process.pid}.tmp`))).toBe(
+    expect(readdirSync(join(fixture.home, '.cursor')).some((name) => name.includes('.aihh-'))).toBe(
       false,
     );
   });
