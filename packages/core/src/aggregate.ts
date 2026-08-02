@@ -11,6 +11,7 @@ import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 
 import { detectMcpOverlaps } from './overlap.js';
+import { fileDeletability } from './deletable.js';
 import { mapConcurrentBatches } from './concurrency.js';
 import { parseContent } from './parsers.js';
 import {
@@ -46,6 +47,14 @@ export interface EntryProvenance {
   /** Registry location that produced the file, e.g. "Global agents". */
   readonly locationLabel: string;
   readonly scope: ConfigScope;
+  /**
+   * True when deleting the file would remove exactly this entry and nothing
+   * else. False for files that hold more than one thing, such as a settings
+   * file whose permission block sits beside unrelated settings.
+   */
+  readonly deletable: boolean;
+  /** Why deleting is not offered, when it is not. */
+  readonly notDeletableReason?: string;
 }
 
 /**
@@ -1129,6 +1138,7 @@ function buildInstruction(
 
 /** The provenance every synthesized entry carries, in one place. */
 function provenanceOf(file: DiscoveredFile): EntryProvenance {
+  const deletion = fileDeletability(file);
   return {
     fileId: file.id,
     filePath: file.path,
@@ -1139,6 +1149,8 @@ function provenanceOf(file: DiscoveredFile): EntryProvenance {
     providerName: file.providerName,
     locationLabel: file.locationLabel,
     scope: file.scope,
+    deletable: deletion.deletable,
+    ...(deletion.reason !== undefined ? { notDeletableReason: deletion.reason } : {}),
   };
 }
 

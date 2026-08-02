@@ -14,9 +14,11 @@ import type { ReactElement } from 'react';
 import { getFile, getScan, putFile, revealFileValue } from '../api/client.js';
 import { Badge, scopeVariant } from '../components/Badge.js';
 import { CodeEditor } from '../components/CodeEditor.js';
+import { DeleteButton, DeleteConfirm, DeleteNoticeBanner } from '../components/DeleteControl.js';
 import { FileTree } from '../components/FileTree.js';
 import { EmptyState, ErrorState, LoadingState } from '../components/StatusStates.js';
 import { describeError, useAsync } from '../hooks/useAsync.js';
+import { useFileDeletion, type FileDeletion } from '../hooks/useFileDeletion.js';
 import { useTheme } from '../hooks/useTheme.js';
 import { diffLines } from '../lib/diff.js';
 import { SCOPE_LABELS } from '../lib/scope.js';
@@ -181,6 +183,18 @@ export function FilesView({ initialFileId }: { initialFileId: string | undefined
     }
   };
 
+  const reloadScan = scan.reload;
+  // Once the file is gone the tree still lists it until the scan is redone,
+  // and the detail pane would be showing a file that no longer exists, so the
+  // selection is dropped back to "nothing selected".
+  const deletion = useFileDeletion(() => {
+    setDoc(undefined);
+    setEditing(false);
+    setEditDoc(undefined);
+    window.location.hash = '#/files';
+    reloadScan();
+  });
+
   if (scan.loading) return <LoadingState label="Loading discovered files…" />;
   if (scan.error) {
     return (
@@ -189,10 +203,13 @@ export function FilesView({ initialFileId }: { initialFileId: string | undefined
   }
   if (!scan.data || scan.data.tree.length === 0) {
     return (
-      <EmptyState
-        title="No configuration files were discovered yet."
-        detail="Run a scan from the Overview page."
-      />
+      <div className="view view-files">
+        <DeleteNoticeBanner notice={deletion.notice} onDismiss={deletion.dismissNotice} />
+        <EmptyState
+          title="No configuration files were discovered yet."
+          detail="Run a scan from the Overview page."
+        />
+      </div>
     );
   }
 
@@ -200,6 +217,7 @@ export function FilesView({ initialFileId }: { initialFileId: string | undefined
     <div className="view view-files files-layout">
       <FileTree tree={scan.data.tree} selectedFileId={initialFileId} />
       <div className="file-detail">
+        <DeleteNoticeBanner notice={deletion.notice} onDismiss={deletion.dismissNotice} />
         {!initialFileId ? (
           <EmptyState
             title="Select a file"
@@ -227,6 +245,7 @@ export function FilesView({ initialFileId }: { initialFileId: string | undefined
             writeRefusal={writeRefusal}
             onDismissRefusal={() => setWriteRefusal(undefined)}
             onReloadAfterConflict={() => void reloadAfterConflict()}
+            deletion={deletion}
           />
         ) : null}
 
@@ -261,6 +280,7 @@ function FileDetailPanel({
   writeRefusal,
   onDismissRefusal,
   onReloadAfterConflict,
+  deletion,
 }: {
   doc: FileDocument;
   editing: boolean;
@@ -278,6 +298,7 @@ function FileDetailPanel({
   writeRefusal: WriteRefusal | undefined;
   onDismissRefusal: () => void;
   onReloadAfterConflict: () => void;
+  deletion: FileDeletion;
 }): ReactElement {
   const file = doc.file;
   const isCredentialStore = file.sensitivity === 'credential-store';
@@ -405,7 +426,28 @@ function FileDetailPanel({
               </>
             )}
             {!canEdit ? <span className="muted">{doc.readOnlyReason ?? 'Read-only.'}</span> : null}
+            {!editing ? (
+              <DeleteButton
+                target={{ label: file.name, noun: 'file', displayPath: file.displayPath }}
+                deletable={doc.deletable}
+                reason={doc.notDeletableReason}
+                expanded={deletion.confirmingId === file.id}
+                busy={deletion.busyId !== undefined}
+                controls="file-delete-confirm"
+                onClick={() => deletion.request(file.id)}
+              />
+            ) : null}
           </div>
+
+          {deletion.confirmingId === file.id ? (
+            <DeleteConfirm
+              id="file-delete-confirm"
+              target={{ label: file.name, noun: 'file', displayPath: file.displayPath }}
+              busy={deletion.busyId === file.id}
+              onConfirm={() => deletion.confirm(file.id, file.name, doc.hash)}
+              onCancel={deletion.cancel}
+            />
+          ) : null}
 
           <CodeEditor
             value={editing ? editContent : doc.content}
@@ -435,6 +477,8 @@ function refusalMessage(outcome: WriteRefusal): string {
       return 'This file could no longer be found. It may have been moved or deleted.';
     case 'not-declared':
       return 'That MCP server is not declared in this file, so there was nothing to remove.';
+    case 'not-deletable':
+      return outcome.message;
     case 'unsupported-format':
       return outcome.message;
     case 'write-failed':

@@ -125,6 +125,8 @@ export interface FileDocument {
   issues: ParseIssue[];
   readOnly: boolean;
   readOnlyReason?: string;
+  deletable: boolean;
+  notDeletableReason?: string;
 }
 
 export type McpTransport = 'stdio' | 'http' | 'sse' | 'websocket' | 'unknown';
@@ -140,6 +142,9 @@ export interface EntryProvenance {
   providerName: string;
   locationLabel: string;
   scope: ConfigScope;
+  /** True when deleting the file removes exactly this entry and nothing else. */
+  deletable: boolean;
+  notDeletableReason?: string;
 }
 
 export interface DuplicateInfo {
@@ -342,6 +347,8 @@ export interface SourceFileRef {
   modified: string;
   editable: boolean;
   notEditableReason?: string;
+  deletable: boolean;
+  notDeletableReason?: string;
   deprecated?: boolean;
   unattributed?: boolean;
 }
@@ -404,6 +411,7 @@ export type WriteRefusalCode =
   | 'not-found'
   | 'not-declared'
   | 'unsupported-format'
+  | 'not-deletable'
   | 'write-failed';
 
 export interface WriteRefusal {
@@ -430,6 +438,16 @@ export interface McpRemovalSuccess extends WriteSuccess {
 }
 
 export type McpRemovalOutcome = McpRemovalSuccess | WriteRefusal;
+
+/** A whole file that was deleted, and where its last contents were preserved. */
+export interface DeleteSuccess {
+  ok: true;
+  path: string;
+  backupPath: string;
+  bytesRemoved: number;
+}
+
+export type DeleteOutcome = DeleteSuccess | WriteRefusal;
 
 export interface HealthResponse {
   ok: boolean;
@@ -461,6 +479,8 @@ export interface CapabilitySummary {
   modified: string;
   editable: boolean;
   notEditableReason?: string;
+  deletable: boolean;
+  notDeletableReason?: string;
   malformed: boolean;
 }
 

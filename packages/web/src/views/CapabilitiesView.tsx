@@ -21,8 +21,10 @@ import type { ReactElement } from 'react';
 import { getCapabilities, getCapability, putCapability } from '../api/client.js';
 import { Badge, scopeVariant } from '../components/Badge.js';
 import { CodeEditor } from '../components/CodeEditor.js';
+import { DeleteButton, DeleteConfirm, DeleteNoticeBanner } from '../components/DeleteControl.js';
 import { EmptyState, ErrorState, LoadingState } from '../components/StatusStates.js';
 import { describeError, useAsync } from '../hooks/useAsync.js';
+import { useFileDeletion } from '../hooks/useFileDeletion.js';
 import { useTheme } from '../hooks/useTheme.js';
 import { COMMON_MODELS, parseToolList, previewDocument } from '../lib/capability.js';
 import { diffLines } from '../lib/diff.js';
@@ -219,6 +221,17 @@ export function CapabilitiesView({
     setEditHash(revealed.hash);
   };
 
+  const reloadList = list.reload;
+  // The selected capability no longer exists once it is deleted, so the
+  // detail pane is emptied and the route drops back to the bare list rather
+  // than leaving a link to a file that will 404 on the next click.
+  const deletion = useFileDeletion(() => {
+    setDoc(undefined);
+    setEditing(false);
+    window.location.hash = '#/capabilities';
+    reloadList();
+  });
+
   const capabilities = list.data?.capabilities ?? [];
   const shown = useMemo(() => {
     const needle = filter.trim().toLowerCase();
@@ -245,15 +258,20 @@ export function CapabilitiesView({
   }
   if (capabilities.length === 0) {
     return (
-      <EmptyState
-        title="No agents or skills were discovered."
-        detail="Agent and skill files live in folders such as ~/.copilot/agents, ~/.claude/skills, and .github/agents. Register a project root on the Overview page if yours are project-scoped."
-      />
+      <div className="view view-capabilities">
+        <DeleteNoticeBanner notice={deletion.notice} onDismiss={deletion.dismissNotice} />
+        <EmptyState
+          title="No agents or skills were discovered."
+          detail="Agent and skill files live in folders such as ~/.copilot/agents, ~/.claude/skills, and .github/agents. Register a project root on the Overview page if yours are project-scoped."
+        />
+      </div>
     );
   }
 
   const modelSuggestions = [...new Set([...(list.data?.knownModels ?? []), ...COMMON_MODELS])];
   const toolSuggestions = list.data?.knownTools ?? [];
+  const selected = capabilities.find((entry) => entry.fileId === initialFileId);
+  const readOnly = list.data?.readOnly ?? true;
 
   return (
     <div className="view view-capabilities capability-layout">
@@ -290,6 +308,7 @@ export function CapabilitiesView({
       </div>
 
       <div className="capability-detail">
+        <DeleteNoticeBanner notice={deletion.notice} onDismiss={deletion.dismissNotice} />
         {!initialFileId ? (
           <EmptyState
             title="Select an agent or skill"
@@ -392,10 +411,41 @@ export function CapabilitiesView({
               >
                 Open raw file editor
               </a>
+              {!editing && !readOnly ? (
+                <DeleteButton
+                  target={{
+                    label: doc.fields.name ?? doc.file.name,
+                    noun: doc.kind === 'chatmode' ? 'chat mode' : doc.kind,
+                    displayPath: doc.file.displayPath,
+                  }}
+                  deletable={selected?.deletable ?? false}
+                  reason={selected?.notDeletableReason}
+                  expanded={deletion.confirmingId === doc.file.id}
+                  busy={deletion.busyId !== undefined}
+                  controls="capability-delete-confirm"
+                  onClick={() => deletion.request(doc.file.id)}
+                />
+              ) : null}
               {doc.readOnly ? (
                 <span className="muted">{doc.readOnlyReason ?? 'Read-only.'}</span>
               ) : null}
             </div>
+
+            {deletion.confirmingId === doc.file.id ? (
+              <DeleteConfirm
+                id="capability-delete-confirm"
+                target={{
+                  label: doc.fields.name ?? doc.file.name,
+                  noun: doc.kind === 'chatmode' ? 'chat mode' : doc.kind,
+                  displayPath: doc.file.displayPath,
+                }}
+                busy={deletion.busyId === doc.file.id}
+                onConfirm={() =>
+                  deletion.confirm(doc.file.id, doc.fields.name ?? doc.file.name, doc.hash)
+                }
+                onCancel={deletion.cancel}
+              />
+            ) : null}
 
             {editing && form ? (
               <CapabilityForm
@@ -890,9 +940,10 @@ function refusalMessage(outcome: WriteRefusal): string {
       return 'This file changed on disk since it was loaded. Reload to see the latest version before saving again.';
     case 'not-found':
       return 'This file could no longer be found. It may have been moved or deleted.';
-    // MCP-server removal codes, which a capability write never produces; the
-    // switch has to stay exhaustive over the shared refusal union.
+    // MCP-server removal and file-delete codes, which a capability write never
+    // produces; the switch has to stay exhaustive over the shared refusal union.
     case 'not-declared':
+    case 'not-deletable':
     case 'unsupported-format':
       return outcome.message;
     case 'write-failed':

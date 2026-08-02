@@ -18,6 +18,7 @@ import {
   type CapabilityDocumentBody,
 } from './capability-doc.js';
 import { removeMcpServerFromText } from './mcp-edit.js';
+import { fileDeletability } from './deletable.js';
 import { mapConcurrent, mapConcurrentBatches } from './concurrency.js';
 import { editorLanguage, parseContent, type ParseIssue } from './parsers.js';
 import { createEnvironment, selectPlatformTemplates, toDisplayPath } from './paths.js';
@@ -38,8 +39,10 @@ import type {
   Sensitivity,
 } from './types.js';
 import {
+  deleteConfigFile,
   hashContent,
   writeConfigFile,
+  type DeleteOutcome,
   type WriteOutcome,
   type WriteRefusal,
   type WriteSuccess,
@@ -88,6 +91,10 @@ export interface FileDocument {
   readonly readOnly: boolean;
   /** Why the file may not be edited. */
   readonly readOnlyReason?: string;
+  /** True when the whole file may be deleted from here. */
+  readonly deletable: boolean;
+  /** Why deleting is not offered, when it is not. */
+  readonly notDeletableReason?: string;
 }
 
 /** One hit from a content search. */
@@ -132,6 +139,10 @@ export interface SourceFileRef {
   readonly editable: boolean;
   /** Why an edit would be refused, when it would be. */
   readonly notEditableReason?: string;
+  /** True when the whole file may be deleted from here. */
+  readonly deletable: boolean;
+  /** Why deleting is not offered, when it is not. */
+  readonly notDeletableReason?: string;
   readonly deprecated?: boolean;
   readonly unattributed?: boolean;
 }
@@ -244,6 +255,9 @@ export interface CapabilitySummary {
   /** True when this session would accept an edit to the file. */
   readonly editable: boolean;
   readonly notEditableReason?: string;
+  /** True when the whole file may be deleted from here. */
+  readonly deletable: boolean;
+  readonly notDeletableReason?: string;
   /** True when the front matter could not be parsed. */
   readonly malformed: boolean;
 }
@@ -556,6 +570,7 @@ export class HarnessService {
 
   #describeFile(file: DiscoveredFile): SourceFileRef {
     const blocked = this.#editBlockReason(file);
+    const undeletable = this.#deleteBlockReason(file);
     return {
       fileId: file.id,
       name: file.name,
@@ -568,6 +583,8 @@ export class HarnessService {
       modified: file.modified,
       editable: blocked === undefined,
       ...(blocked !== undefined ? { notEditableReason: blocked } : {}),
+      deletable: undeletable === undefined,
+      ...(undeletable !== undefined ? { notDeletableReason: undeletable } : {}),
       ...(file.deprecated ? { deprecated: true } : {}),
       ...(file.unattributed ? { unattributed: true } : {}),
     };
@@ -624,6 +641,11 @@ export class HarnessService {
     if (!this.isAuthorized(file.path)) return undefined;
 
     const blocked = this.#editBlockReason(file);
+    const undeletable = this.#deleteBlockReason(file);
+    const deletion = {
+      deletable: undeletable === undefined,
+      ...(undeletable !== undefined ? { notDeletableReason: undeletable } : {}),
+    };
 
     if (file.sensitivity === 'credential-store') {
       return {
@@ -636,6 +658,7 @@ export class HarnessService {
         issues: [],
         readOnly: true,
         readOnlyReason: blocked,
+        ...deletion,
       };
     }
 
@@ -650,6 +673,7 @@ export class HarnessService {
         issues: [{ message: `File is too large to display (${formatBytes(file.size)}).` }],
         readOnly: true,
         readOnlyReason: 'Too large to edit here.',
+        ...deletion,
       };
     }
 
@@ -667,6 +691,7 @@ export class HarnessService {
         issues: [{ message: `Could not read the file: ${describe(error)}` }],
         readOnly: true,
         readOnlyReason: 'Unreadable.',
+        ...deletion,
       };
     }
 
@@ -683,6 +708,7 @@ export class HarnessService {
         issues: parsed.issues,
         readOnly: blocked !== undefined,
         ...(blocked !== undefined ? { readOnlyReason: blocked } : {}),
+        ...deletion,
       };
     }
 
@@ -697,6 +723,7 @@ export class HarnessService {
       issues: parsed.issues,
       readOnly: blocked !== undefined,
       ...(blocked !== undefined ? { readOnlyReason: blocked } : {}),
+      ...deletion,
     };
   }
 
@@ -835,6 +862,55 @@ export class HarnessService {
     return { ...outcome, serverName, removedFrom: removal.removedFrom };
   }
 
+  /**
+   * Deletes a whole discovered file.
+   *
+   * Offered only for files that *are* the thing the UI showed — an agent, a
+   * skill, an instruction document, an ignore file — so the user never removes
+   * more than the row they clicked. A settings file that happens to contain a
+   * permission block is refused here rather than in the UI, because a rule
+   * enforced only in the browser is not a rule.
+   *
+   * `expectedHash` is optional but strongly preferred: passing the hash the
+   * client loaded turns "delete this file" into "delete the file I read",
+   * which is the difference between removing a stale skill and removing the
+   * rewrite someone made while the page sat open.
+   */
+  async deleteFile(id: string, expectedHash?: string): Promise<DeleteOutcome | undefined> {
+    const file = this.findFile(id);
+    if (!file || !this.isAuthorized(file.path)) return undefined;
+
+    if (this.#readOnly) {
+      return {
+        ok: false,
+        code: 'read-only',
+        message: 'This session is read-only. Restart without --read-only to make changes.',
+      };
+    }
+
+    const deletion = fileDeletability(file);
+    if (!deletion.deletable) {
+      return {
+        ok: false,
+        code: 'not-deletable',
+        message: deletion.reason ?? 'This file cannot be deleted.',
+      };
+    }
+
+    const outcome = await deleteConfigFile(
+      {
+        path: file.path,
+        sensitivity: file.sensitivity,
+        ...(expectedHash !== undefined ? { expectedHash } : {}),
+      },
+      { ...this.#writerOptions, readOnly: this.#readOnly },
+    );
+
+    // The file is gone, so every derived view that still lists it is wrong.
+    if (outcome.ok) await this.refresh();
+    return outcome;
+  }
+
   /* ------------------------------------------- Structured capability edit -- */
 
   /**
@@ -866,6 +942,7 @@ export class HarnessService {
       },
     )) {
       const blocked = this.#editBlockReason(file);
+      const undeletable = this.#deleteBlockReason(file);
       if (parsed?.model) models.add(parsed.model);
       for (const tool of parsed?.tools ?? []) tools.add(tool);
 
@@ -893,6 +970,8 @@ export class HarnessService {
           : parsed === undefined
             ? { notEditableReason: 'The file could not be read.' }
             : {}),
+        deletable: undeletable === undefined,
+        ...(undeletable !== undefined ? { notDeletableReason: undeletable } : {}),
         malformed: (parsed?.issues.length ?? 0) > 0,
       });
     }
@@ -1276,6 +1355,18 @@ export class HarnessService {
       return 'Credential stores are never editable here.';
     }
     return undefined;
+  }
+
+  /**
+   * Why a file may not be deleted, or `undefined` when it may.
+   *
+   * The session-level `--read-only` check comes first so a read-only run
+   * reports the flag rather than a kind-specific rule the user cannot act on.
+   */
+  #deleteBlockReason(file: DiscoveredFile): string | undefined {
+    if (this.#readOnly) return 'This session is read-only.';
+    const deletion = fileDeletability(file);
+    return deletion.deletable ? undefined : (deletion.reason ?? 'This file cannot be deleted.');
   }
 }
 

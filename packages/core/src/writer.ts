@@ -34,6 +34,8 @@ export type WriteRefusalCode =
   | 'not-declared'
   /** The file's format or layout cannot be edited structurally. */
   | 'unsupported-format'
+  /** The file holds more than the entry that was asked to be removed. */
+  | 'not-deletable'
   | 'write-failed';
 
 /** A write that did not happen, and why. */
@@ -59,6 +61,34 @@ export interface WriteSuccess {
 }
 
 export type WriteOutcome = WriteSuccess | WriteRefusal;
+
+/** A file that was removed, and where its last contents were preserved. */
+export interface DeleteSuccess {
+  readonly ok: true;
+  readonly path: string;
+  /** Where the deleted content was preserved, so the delete is recoverable. */
+  readonly backupPath: string;
+  readonly bytesRemoved: number;
+}
+
+/**
+ * The result of deleting a whole file.
+ *
+ * Shares the writer's refusal shape so callers already handling `read-only` or
+ * `hash-mismatch` need no second error vocabulary.
+ */
+export type DeleteOutcome = DeleteSuccess | WriteRefusal;
+
+export interface DeleteRequest {
+  /** Absolute path to delete. Callers must have already authorized it. */
+  readonly path: string;
+  readonly sensitivity: Sensitivity;
+  /**
+   * SHA-256 the client last read. A mismatch aborts the delete. Omit only when
+   * the caller has no loaded copy to be stale.
+   */
+  readonly expectedHash?: string;
+}
 
 export interface WriteRequest {
   /** Absolute path to write. Callers must have already authorized it. */
@@ -233,6 +263,97 @@ export async function writeConfigFile(
     hash: hashContent(request.content),
     backupPath,
     bytesWritten: Buffer.byteLength(request.content, 'utf8'),
+  };
+}
+
+/**
+ * Deletes a whole configuration file, with the same guards a write gets.
+ *
+ * A delete is the one change here that cannot be undone by editing, so the
+ * content is copied into the backup tree *before* the file is unlinked and the
+ * backup path comes back in the outcome. Callers decide separately whether a
+ * given file is a legitimate delete target; this function only enforces the
+ * guards that apply to every file.
+ */
+export async function deleteConfigFile(
+  request: DeleteRequest,
+  options: WriterOptions = {},
+): Promise<DeleteOutcome> {
+  if (options.readOnly) {
+    return {
+      ok: false,
+      code: 'read-only',
+      message: 'This session is read-only. Restart without --read-only to make changes.',
+    };
+  }
+
+  if (request.sensitivity === 'credential-store') {
+    return {
+      ok: false,
+      code: 'credential-store',
+      message:
+        'This file exists to hold credentials and is never modified here. Use the owning tool to remove it.',
+    };
+  }
+
+  let existing: string;
+  try {
+    existing = await readFile(request.path, 'utf8');
+  } catch (error) {
+    if (isNotFound(error)) {
+      return {
+        ok: false,
+        code: 'not-found',
+        message: 'The file no longer exists. Re-scan to see what is actually there.',
+      };
+    }
+    return {
+      ok: false,
+      code: 'write-failed',
+      message: `Could not read the file, so nothing was deleted: ${describeError(error)}`,
+    };
+  }
+
+  const currentHash = hashContent(existing);
+  if (request.expectedHash !== undefined && request.expectedHash !== currentHash) {
+    return {
+      ok: false,
+      code: 'hash-mismatch',
+      message:
+        'The file changed on disk since you loaded it. Reload to see the current contents, then try again.',
+      currentHash,
+    };
+  }
+
+  const now = options.now?.() ?? new Date();
+  const backupRoot = options.backupRoot ?? defaultBackupRoot();
+
+  let backupPath: string;
+  try {
+    backupPath = await createBackup(request.path, existing, backupRoot, now);
+  } catch (error) {
+    return {
+      ok: false,
+      code: 'write-failed',
+      message: `Could not create a backup, so nothing was deleted: ${describeError(error)}`,
+    };
+  }
+
+  try {
+    await unlink(request.path);
+  } catch (error) {
+    return {
+      ok: false,
+      code: 'write-failed',
+      message: `Delete failed: ${describeError(error)}`,
+    };
+  }
+
+  return {
+    ok: true,
+    path: request.path,
+    backupPath,
+    bytesRemoved: Buffer.byteLength(existing, 'utf8'),
   };
 }
 
