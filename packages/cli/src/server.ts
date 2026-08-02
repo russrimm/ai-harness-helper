@@ -52,6 +52,8 @@ function tokensMatch(provided: string, expected: string): boolean {
 /** Hosts a browser may legitimately present for a loopback server. */
 const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]', '::1']);
 const MAX_REQUEST_OVERHEAD_BYTES = 64 * 1024;
+/** A one-byte control character can expand to six ASCII bytes as `\u00XX`. */
+const MAX_JSON_STRING_EXPANSION = 6;
 const MAX_IDENTIFIER_CHARS = 256;
 const MAX_PATH_CHARS = 4096;
 const MAX_SEARCH_QUERY_CHARS = 512;
@@ -81,8 +83,9 @@ export async function createServer(options: ServerOptions): Promise<HarnessServe
 
   const app = Fastify({
     logger: false,
-    // Leave room for JSON quoting around one maximum-sized document.
-    bodyLimit: MAX_DOCUMENT_BYTES + MAX_REQUEST_OVERHEAD_BYTES,
+    // Transport size includes worst-case JSON escaping; parsed content is still
+    // held to MAX_DOCUMENT_BYTES below.
+    bodyLimit: MAX_DOCUMENT_BYTES * MAX_JSON_STRING_EXPANSION + MAX_REQUEST_OVERHEAD_BYTES,
   });
 
   app.addHook('onRequest', async (request: FastifyRequest, reply: FastifyReply) => {

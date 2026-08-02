@@ -350,6 +350,23 @@ describe('write routes', () => {
     expect(response.json()).toMatchObject({ error: expect.stringContaining('2097152') });
   });
 
+  it('accepts bounded content even when JSON escaping expands the request', async () => {
+    const { id, hash, path } = await settings();
+    const content = JSON.stringify({ note: '\\'.repeat(600_000) });
+    expect(Buffer.byteLength(JSON.stringify({ content, expectedHash: hash }))).toBeGreaterThan(
+      2 * 1024 * 1024 + 64 * 1024,
+    );
+
+    const response = await call({
+      method: 'PUT',
+      url: `/api/files/${id}`,
+      payload: { content, expectedHash: hash },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(readFileSync(path, 'utf8')).toBe(content);
+  });
+
   it('403s every write in read-only mode', async () => {
     await app.close();
     await start({ readOnly: true });
