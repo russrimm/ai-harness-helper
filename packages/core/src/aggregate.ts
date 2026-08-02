@@ -11,7 +11,7 @@ import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 
 import { detectMcpOverlaps } from './overlap.js';
-import { mapConcurrent } from './concurrency.js';
+import { mapConcurrentBatches } from './concurrency.js';
 import { parseContent } from './parsers.js';
 import {
   REDACTED_PLACEHOLDER,
@@ -310,14 +310,14 @@ export async function aggregate(
   const parsedFileIds: string[] = [];
   /** Content digests keyed by file id, used to tell a copy from a conflict. */
   const contentHashes = new Map<string, string>();
-  const contents = await mapConcurrent(scan.files, FILE_READ_CONCURRENCY, async (file) => {
-    if (file.sensitivity === 'credential-store') return undefined;
-    return load(file);
-  });
-
-  for (let index = 0; index < scan.files.length; index += 1) {
-    const file = scan.files[index];
-    if (!file) continue;
+  for await (const { item: file, result: text } of mapConcurrentBatches(
+    scan.files,
+    FILE_READ_CONCURRENCY,
+    async (entry) => {
+      if (entry.sensitivity === 'credential-store') return undefined;
+      return load(entry);
+    },
+  )) {
     if (file.sensitivity === 'credential-store') {
       findings.push({
         id: `credential-store:${file.id}`,
@@ -344,7 +344,6 @@ export async function aggregate(
       });
     }
 
-    const text = contents[index];
     if (text === undefined) continue;
 
     if (text.trim().length === 0) {

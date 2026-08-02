@@ -18,7 +18,7 @@ import {
   type CapabilityDocumentBody,
 } from './capability-doc.js';
 import { removeMcpServerFromText } from './mcp-edit.js';
-import { mapConcurrent } from './concurrency.js';
+import { mapConcurrent, mapConcurrentBatches } from './concurrency.js';
 import { editorLanguage, parseContent, type ParseIssue } from './parsers.js';
 import { createEnvironment, selectPlatformTemplates, toDisplayPath } from './paths.js';
 import {
@@ -853,20 +853,18 @@ export class HarnessService {
     const models = new Set<string>();
     const tools = new Set<string>();
     const files = result.files.filter((file) => this.#isCapabilityFile(file));
-    const parsedDocuments = await mapConcurrent(files, FILE_READ_CONCURRENCY, async (file) => {
-      try {
-        return parseCapabilityDocument(await readFile(file.path, 'utf8'));
-      } catch {
-        // An unreadable file is still listed below with a reason.
-        return undefined;
-      }
-    });
-
-    for (let index = 0; index < files.length; index += 1) {
-      const file = files[index];
-      if (!file) continue;
-      const parsed = parsedDocuments[index];
-
+    for await (const { item: file, result: parsed } of mapConcurrentBatches(
+      files,
+      FILE_READ_CONCURRENCY,
+      async (entry) => {
+        try {
+          return parseCapabilityDocument(await readFile(entry.path, 'utf8'));
+        } catch {
+          // An unreadable file is still listed below with a reason.
+          return undefined;
+        }
+      },
+    )) {
       const blocked = this.#editBlockReason(file);
       if (parsed?.model) models.add(parsed.model);
       for (const tool of parsed?.tools ?? []) tools.add(tool);
