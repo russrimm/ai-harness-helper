@@ -21,6 +21,8 @@
     "format:check": "prettier --check .",
     "test": "vitest run",
     "test:watch": "vitest",
+    "bootstrap": "node scripts/bootstrap.js",
+    "prestart": "node scripts/bootstrap.js",
     "start": "node packages/cli/dist/bin.js",
     "clean": "node -e \"for (const p of ['packages/core/dist','packages/cli/dist','packages/web/dist','packages/core/tsconfig.tsbuildinfo','packages/cli/tsconfig.tsbuildinfo']) require('node:fs').rmSync(p,{recursive:true,force:true})\""
   },
