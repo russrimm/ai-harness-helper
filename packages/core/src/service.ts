@@ -6,7 +6,7 @@
  * can be tested without a socket.
  */
 
-import { readFile } from 'node:fs/promises';
+import { readFile, stat } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, resolve, sep } from 'node:path';
 
 import { aggregate, type HarnessInventory } from './aggregate.js';
@@ -60,6 +60,14 @@ export interface McpRemovalSuccess extends WriteSuccess {
  * or `hash-mismatch` need no second error vocabulary.
  */
 export type McpRemovalOutcome = McpRemovalSuccess | WriteRefusal;
+
+/** A requested project root cannot be scanned safely. */
+export class InvalidProjectRootError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'InvalidProjectRootError';
+  }
+}
 
 /** A file's contents prepared for display or editing. */
 export interface FileDocument {
@@ -303,6 +311,26 @@ export const MAX_DOCUMENT_BYTES = 2 * 1024 * 1024;
 const DEFAULT_SEARCH_LIMIT = 200;
 const FILE_READ_CONCURRENCY = 8;
 
+async function assertProjectRoot(root: string): Promise<void> {
+  let metadata;
+  try {
+    metadata = await stat(root);
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === 'ENOENT') {
+      throw new InvalidProjectRootError(
+        `Project root does not exist: "${root}". Check the path passed to --project.`,
+      );
+    }
+    throw new InvalidProjectRootError(
+      `Project root cannot be read: "${root}". ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  if (!metadata.isDirectory()) {
+    throw new InvalidProjectRootError(`Project root is not a directory: "${root}".`);
+  }
+}
+
 export class HarnessService {
   readonly #environment: ResolverEnvironment;
   readonly #projectsOnly: boolean;
@@ -332,6 +360,7 @@ export class HarnessService {
 
   /** Re-reads the filesystem and recomputes the inventory. */
   async refresh(): Promise<ScanResult> {
+    await mapConcurrent(this.#projectRoots, FILE_READ_CONCURRENCY, assertProjectRoot);
     const result = await scan({
       environment: this.#environment,
       projectRoots: this.#projectRoots,
@@ -546,6 +575,7 @@ export class HarnessService {
 
   async addProjectRoot(root: string): Promise<readonly string[]> {
     const resolved = resolve(root);
+    await assertProjectRoot(resolved);
     if (!this.#projectRoots.some((existing) => samePath(existing, resolved))) {
       this.#projectRoots.push(resolved);
       await this.refresh();

@@ -645,6 +645,25 @@ describe('project roots', () => {
       ).statusCode,
     ).toBe(400);
   });
+
+  it('returns an actionable error for missing roots and files', async () => {
+    const missing = await call({
+      method: 'POST',
+      url: '/api/projects',
+      payload: { path: `${fixture.root}/missing` },
+    });
+    expect(missing.statusCode).toBe(400);
+    expect((missing.json() as { error: string }).error).toMatch(/does not exist.*--project/);
+
+    const file = fixture.write('not-a-project.txt', 'content');
+    const notDirectory = await call({
+      method: 'POST',
+      url: '/api/projects',
+      payload: { path: file },
+    });
+    expect(notDirectory.statusCode).toBe(400);
+    expect((notDirectory.json() as { error: string }).error).toMatch(/not a directory/);
+  });
 });
 
 describe('search and export', () => {

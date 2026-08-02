@@ -47,6 +47,24 @@ on every run. Nothing is sent anywhere: there is no telemetry and no outbound
 network access.
 `.trimStart();
 
+function parsePort(value: string | undefined): number {
+  if (!value || !/^\d+$/.test(value)) {
+    throw new Error(`--port needs a whole number between 0 and 65535, got "${value ?? ''}".`);
+  }
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed > 65535) {
+    throw new Error(`--port needs a whole number between 0 and 65535, got "${value}".`);
+  }
+  return parsed;
+}
+
+function addProject(options: Options, value: string | undefined): void {
+  if (!value || value.startsWith('-')) {
+    throw new Error('--project needs a path. Example: --project ./my-app');
+  }
+  options.projects.push(resolve(value));
+}
+
 export function parseArgs(argv: readonly string[]): Options {
   const options: Options = {
     port: undefined,
@@ -60,6 +78,14 @@ export function parseArgs(argv: readonly string[]): Options {
 
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
+    if (arg?.startsWith('--port=')) {
+      options.port = parsePort(arg.slice('--port='.length));
+      continue;
+    }
+    if (arg?.startsWith('--project=')) {
+      addProject(options, arg.slice('--project='.length));
+      continue;
+    }
     switch (arg) {
       case '-h':
       case '--help':
@@ -82,22 +108,22 @@ export function parseArgs(argv: readonly string[]): Options {
       case '--port': {
         const value = argv[index + 1];
         index += 1;
-        const parsed = Number.parseInt(value ?? '', 10);
-        if (!Number.isInteger(parsed) || parsed < 0 || parsed > 65535) {
-          throw new Error(`--port needs a number between 0 and 65535, got "${value ?? ''}".`);
-        }
-        options.port = parsed;
+        options.port = parsePort(value);
         break;
       }
       case '--project': {
         const value = argv[index + 1];
         index += 1;
-        if (!value) throw new Error('--project needs a path.');
-        options.projects.push(resolve(value));
+        addProject(options, value);
         break;
       }
       default:
-        if (arg?.startsWith('-')) throw new Error(`Unknown option "${arg}".`);
+        if (arg?.startsWith('-')) {
+          throw new Error(`Unknown option "${arg}". Run with --help to see valid options.`);
+        }
+        throw new Error(
+          `Unexpected argument "${arg ?? ''}". Use --project <path> to scan a folder.`,
+        );
     }
   }
 

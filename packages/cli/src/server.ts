@@ -15,7 +15,11 @@ import { randomBytes, timingSafeEqual } from 'node:crypto';
 
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 import fastifyStatic from '@fastify/static';
-import { MAX_DOCUMENT_BYTES, type HarnessService } from '@ai-harness-helper/core';
+import {
+  InvalidProjectRootError,
+  MAX_DOCUMENT_BYTES,
+  type HarnessService,
+} from '@ai-harness-helper/core';
 
 export interface ServerOptions {
   readonly service: HarnessService;
@@ -309,7 +313,14 @@ export async function createServer(options: ServerOptions): Promise<HarnessServe
         .code(400)
         .send({ error: `path must be no longer than ${MAX_PATH_CHARS} characters.` });
     }
-    return { roots: await service.addProjectRoot(path) };
+    try {
+      return { roots: await service.addProjectRoot(path) };
+    } catch (error) {
+      if (error instanceof InvalidProjectRootError) {
+        return reply.code(400).send({ error: error.message });
+      }
+      throw error;
+    }
   });
 
   app.delete<{ Body: { path?: string } }>('/api/projects', async (request, reply) => {
