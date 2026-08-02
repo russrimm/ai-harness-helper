@@ -232,13 +232,18 @@ npm test
 npm start -- --no-open
 ```
 
-| Command             | Purpose                 |
-| ------------------- | ----------------------- |
-| `npm run build`     | Build all packages.     |
-| `npm test`          | Run the test suite.     |
-| `npm run typecheck` | Typecheck all packages. |
-| `npm run lint`      | Lint.                   |
-| `npm run format`    | Format with Prettier.   |
+| Command             | Purpose                                             |
+| ------------------- | --------------------------------------------------- |
+| `npm run bootstrap` | Install and build only if either output is missing. |
+| `npm run build`     | Build all packages.                                 |
+| `npm test`          | Run the test suite.                                 |
+| `npm run typecheck` | Typecheck all packages.                             |
+| `npm run lint`      | Lint.                                               |
+| `npm run format`    | Format with Prettier.                               |
+
+`npm start` runs `npm run bootstrap` first, so a fresh clone or a new git
+worktree can go straight to `npm start` without a separate install and build.
+Warm starts skip both steps.
 
 The repository is an npm workspaces monorepo:
 
