@@ -204,6 +204,16 @@ table {
   width: 100%;
 }
 
+.table-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+}
+
+.table-scroll > table {
+  min-width: 100%;
+}
+
 th,
 td {
   text-align: left;
@@ -1222,6 +1232,23 @@ button.danger:hover:not(:disabled) {
 }
 
 @media (max-width: 860px) {
+  .mcp-table-scroll > table {
+    min-width: 72rem;
+  }
+
+  .mcp-definitions-scroll > table {
+    min-width: 62rem;
+  }
+
+  .overlap-table-scroll > table,
+  .source-table-scroll > table {
+    min-width: 48rem;
+  }
+
+  .capability-change-scroll > table {
+    min-width: 36rem;
+  }
+
   .files-layout {
     grid-template-columns: 1fr;
   }

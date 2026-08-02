@@ -817,25 +817,32 @@ function SaveConfirmation({
       {metadataKeys.length === 0 && !bodyChanged ? <p>No changes detected.</p> : null}
 
       {metadataKeys.length > 0 ? (
-        <table className="capability-change-table">
-          <caption>Front matter</caption>
-          <thead>
-            <tr>
-              <th scope="col">Field</th>
-              <th scope="col">Before</th>
-              <th scope="col">After</th>
-            </tr>
-          </thead>
-          <tbody>
-            {metadataKeys.map((key) => (
-              <tr key={key}>
-                <th scope="row">{FIELD_LABELS[key]}</th>
-                <td>{before[key] || <span className="muted">removed</span>}</td>
-                <td>{after[key] || <span className="muted">removed</span>}</td>
+        <div
+          className="table-scroll capability-change-scroll"
+          role="region"
+          aria-label="Front matter changes"
+          tabIndex={0}
+        >
+          <table className="capability-change-table">
+            <caption>Front matter</caption>
+            <thead>
+              <tr>
+                <th scope="col">Field</th>
+                <th scope="col">Before</th>
+                <th scope="col">After</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {metadataKeys.map((key) => (
+                <tr key={key}>
+                  <th scope="row">{FIELD_LABELS[key]}</th>
+                  <td>{before[key] || <span className="muted">removed</span>}</td>
+                  <td>{after[key] || <span className="muted">removed</span>}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       ) : null}
 
       {bodyChanged ? (

@@ -22,6 +22,7 @@ interface Options {
   open: boolean;
   readOnly: boolean;
   projects: string[];
+  projectsOnly: boolean;
   help: boolean;
   version: boolean;
 }
@@ -35,6 +36,7 @@ Usage
 Options
   -p, --port <number>    Port to listen on. Defaults to the first free port from 7777.
       --project <path>   Also scan a project folder. Repeatable.
+      --projects-only    Scan project folders without user or machine configuration.
       --read-only        Disable all editing for this session.
       --no-open          Do not launch a browser.
   -h, --help             Show this help.
@@ -45,18 +47,45 @@ on every run. Nothing is sent anywhere: there is no telemetry and no outbound
 network access.
 `.trimStart();
 
+function parsePort(value: string | undefined): number {
+  if (!value || !/^\d+$/.test(value)) {
+    throw new Error(`--port needs a whole number between 0 and 65535, got "${value ?? ''}".`);
+  }
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed > 65535) {
+    throw new Error(`--port needs a whole number between 0 and 65535, got "${value}".`);
+  }
+  return parsed;
+}
+
+function addProject(options: Options, value: string | undefined): void {
+  if (!value || value.startsWith('-')) {
+    throw new Error('--project needs a path. Example: --project ./my-app');
+  }
+  options.projects.push(resolve(value));
+}
+
 export function parseArgs(argv: readonly string[]): Options {
   const options: Options = {
     port: undefined,
     open: true,
     readOnly: false,
     projects: [],
+    projectsOnly: false,
     help: false,
     version: false,
   };
 
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
+    if (arg?.startsWith('--port=')) {
+      options.port = parsePort(arg.slice('--port='.length));
+      continue;
+    }
+    if (arg?.startsWith('--project=')) {
+      addProject(options, arg.slice('--project='.length));
+      continue;
+    }
     switch (arg) {
       case '-h':
       case '--help':
@@ -72,27 +101,34 @@ export function parseArgs(argv: readonly string[]): Options {
       case '--no-open':
         options.open = false;
         break;
+      case '--projects-only':
+        options.projectsOnly = true;
+        break;
       case '-p':
       case '--port': {
         const value = argv[index + 1];
         index += 1;
-        const parsed = Number.parseInt(value ?? '', 10);
-        if (!Number.isInteger(parsed) || parsed < 0 || parsed > 65535) {
-          throw new Error(`--port needs a number between 0 and 65535, got "${value ?? ''}".`);
-        }
-        options.port = parsed;
+        options.port = parsePort(value);
         break;
       }
       case '--project': {
         const value = argv[index + 1];
         index += 1;
-        if (!value) throw new Error('--project needs a path.');
-        options.projects.push(resolve(value));
+        addProject(options, value);
         break;
       }
       default:
-        if (arg?.startsWith('-')) throw new Error(`Unknown option "${arg}".`);
+        if (arg?.startsWith('-')) {
+          throw new Error(`Unknown option "${arg}". Run with --help to see valid options.`);
+        }
+        throw new Error(
+          `Unexpected argument "${arg ?? ''}". Use --project <path> to scan a folder.`,
+        );
     }
+  }
+
+  if (options.projectsOnly && options.projects.length === 0) {
+    throw new Error('--projects-only requires at least one --project <path>.');
   }
 
   return options;
@@ -187,10 +223,15 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
 
   const service = new HarnessService({
     projectRoots: options.projects,
+    projectsOnly: options.projectsOnly,
     readOnly: options.readOnly,
   });
 
-  process.stdout.write('Scanning for agentic harness configuration...\n');
+  process.stdout.write(
+    options.projectsOnly
+      ? 'Scanning project harness configuration only...\n'
+      : 'Scanning for agentic harness configuration...\n',
+  );
   const result = await service.refresh();
   const inventory = await service.getInventory();
 
@@ -206,6 +247,9 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
   process.stdout.write(
     `\n  Found ${result.files.length} files across ${result.detectedProviders.length} tools` +
       ` — ${inventory.summary.mcpServerCount} MCP servers, ${inventory.summary.findingCount} findings.\n` +
+      (options.projectsOnly
+        ? '  Projects only: user and machine configuration was skipped.\n'
+        : '') +
       (options.readOnly ? '  Read-only: editing is disabled.\n' : '') +
       (publicDir ? '' : '  No web bundle found; serving the API only.\n') +
       `\n  ${url}\n\n  Press Ctrl+C to stop.\n`,

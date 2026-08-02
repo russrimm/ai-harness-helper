@@ -1,19 +1,45 @@
-import type { ReactElement } from 'react';
+import { lazy, Suspense, type ReactElement } from 'react';
 import { getHealth } from './api/client.js';
 import { Nav } from './components/Nav.js';
+import { LoadingState } from './components/StatusStates.js';
 import { ThemeToggle } from './components/ThemeToggle.js';
 import { ViewErrorBoundary } from './components/ViewErrorBoundary.js';
 import { useAsync } from './hooks/useAsync.js';
 import { splitFirstSegment, useHashLocation } from './hooks/useHashLocation.js';
 import { useTheme } from './hooks/useTheme.js';
-import { ExportView } from './views/ExportView.js';
-import { CapabilitiesView } from './views/CapabilitiesView.js';
-import { FilesView } from './views/FilesView.js';
-import { InstructionsView } from './views/InstructionsView.js';
-import { McpView } from './views/McpView.js';
-import { OverviewView } from './views/OverviewView.js';
-import { SearchView } from './views/SearchView.js';
-import { SourcesView } from './views/SourcesView.js';
+
+const OverviewView = lazy(async () => {
+  const module = await import('./views/OverviewView.js');
+  return { default: module.OverviewView };
+});
+const SourcesView = lazy(async () => {
+  const module = await import('./views/SourcesView.js');
+  return { default: module.SourcesView };
+});
+const FilesView = lazy(async () => {
+  const module = await import('./views/FilesView.js');
+  return { default: module.FilesView };
+});
+const McpView = lazy(async () => {
+  const module = await import('./views/McpView.js');
+  return { default: module.McpView };
+});
+const CapabilitiesView = lazy(async () => {
+  const module = await import('./views/CapabilitiesView.js');
+  return { default: module.CapabilitiesView };
+});
+const InstructionsView = lazy(async () => {
+  const module = await import('./views/InstructionsView.js');
+  return { default: module.InstructionsView };
+});
+const SearchView = lazy(async () => {
+  const module = await import('./views/SearchView.js');
+  return { default: module.SearchView };
+});
+const ExportView = lazy(async () => {
+  const module = await import('./views/ExportView.js');
+  return { default: module.ExportView };
+});
 
 const KNOWN_BASES = [
   '/',
@@ -54,15 +80,19 @@ export function App(): ReactElement {
       <main id="main-content">
         {/* Keyed by route so navigating away clears a failed view. */}
         <ViewErrorBoundary key={base}>
-          {base === '/sources' ? <SourcesView /> : null}
-          {base === '/files' ? <FilesView initialFileId={rest} /> : null}
-          {base === '/mcp' ? <McpView /> : null}
-          {base === '/capabilities' ? <CapabilitiesView initialFileId={rest} /> : null}
-          {base === '/instructions' ? <InstructionsView /> : null}
-          {base === '/search' ? <SearchView initialQuery={location.params.get('q') ?? ''} /> : null}
-          {base === '/export' ? <ExportView /> : null}
-          {base === '/' ? <OverviewView /> : null}
-          {!KNOWN_BASES.includes(base) ? <NotFound /> : null}
+          <Suspense fallback={<LoadingState label="Loading view…" />}>
+            {base === '/sources' ? <SourcesView /> : null}
+            {base === '/files' ? <FilesView initialFileId={rest} /> : null}
+            {base === '/mcp' ? <McpView /> : null}
+            {base === '/capabilities' ? <CapabilitiesView initialFileId={rest} /> : null}
+            {base === '/instructions' ? <InstructionsView /> : null}
+            {base === '/search' ? (
+              <SearchView initialQuery={location.params.get('q') ?? ''} />
+            ) : null}
+            {base === '/export' ? <ExportView /> : null}
+            {base === '/' ? <OverviewView /> : null}
+            {!KNOWN_BASES.includes(base) ? <NotFound /> : null}
+          </Suspense>
         </ViewErrorBoundary>
       </main>
     </>

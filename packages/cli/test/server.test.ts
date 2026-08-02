@@ -86,7 +86,7 @@ describe('authentication', () => {
     );
   });
 
-  it('accepts the token as a bearer credential or a query parameter', async () => {
+  it('accepts the token as a bearer credential but never from a query parameter', async () => {
     const bearer = await call({
       url: '/api/overview',
       token: null,
@@ -95,7 +95,7 @@ describe('authentication', () => {
     expect(bearer.statusCode).toBe(200);
 
     const query = await call({ url: `/api/overview?token=${TOKEN}`, token: null });
-    expect(query.statusCode).toBe(200);
+    expect(query.statusCode).toBe(401);
   });
 
   it('rejects a non-loopback Host, which is how DNS rebinding arrives', async () => {
@@ -338,6 +338,35 @@ describe('write routes', () => {
     expect(response.statusCode).toBe(400);
   });
 
+  it('rejects a document larger than the display and edit boundary', async () => {
+    const { id } = await settings();
+    const response = await call({
+      method: 'PUT',
+      url: `/api/files/${id}`,
+      payload: { content: 'x'.repeat(2 * 1024 * 1024 + 1), expectedHash: 'hash' },
+    });
+
+    expect(response.statusCode).toBe(413);
+    expect(response.json()).toMatchObject({ error: expect.stringContaining('2097152') });
+  });
+
+  it('accepts bounded content even when JSON escaping expands the request', async () => {
+    const { id, hash, path } = await settings();
+    const content = JSON.stringify({ note: '\\'.repeat(600_000) });
+    expect(Buffer.byteLength(JSON.stringify({ content, expectedHash: hash }))).toBeGreaterThan(
+      2 * 1024 * 1024 + 64 * 1024,
+    );
+
+    const response = await call({
+      method: 'PUT',
+      url: `/api/files/${id}`,
+      payload: { content, expectedHash: hash },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(readFileSync(path, 'utf8')).toBe(content);
+  });
+
   it('403s every write in read-only mode', async () => {
     await app.close();
     await start({ readOnly: true });
@@ -537,6 +566,24 @@ describe('capability routes', () => {
     ).toBe(400);
   });
 
+  it('bounds capability fields and tool lists', async () => {
+    const { id, hash } = await skill();
+
+    const longName = await call({
+      method: 'PUT',
+      url: `/api/capabilities/${id}`,
+      payload: { expectedHash: hash, name: 'x'.repeat(257) },
+    });
+    expect(longName.statusCode).toBe(400);
+
+    const tooManyTools = await call({
+      method: 'PUT',
+      url: `/api/capabilities/${id}`,
+      payload: { expectedHash: hash, tools: Array.from({ length: 257 }, () => 'read') },
+    });
+    expect(tooManyTools.statusCode).toBe(400);
+  });
+
   it('409s on a stale hash', async () => {
     const { id, path } = await skill();
     const before = readFileSync(path, 'utf8');
@@ -594,6 +641,46 @@ describe('project roots', () => {
       (await call({ method: 'DELETE', url: '/api/projects', payload: { path: '' } })).statusCode,
     ).toBe(400);
   });
+
+  it('rejects an unbounded or null-containing project path', async () => {
+    expect(
+      (
+        await call({
+          method: 'POST',
+          url: '/api/projects',
+          payload: { path: 'x'.repeat(4097) },
+        })
+      ).statusCode,
+    ).toBe(400);
+    expect(
+      (
+        await call({
+          method: 'POST',
+          url: '/api/projects',
+          payload: { path: 'bad\0path' },
+        })
+      ).statusCode,
+    ).toBe(400);
+  });
+
+  it('returns an actionable error for missing roots and files', async () => {
+    const missing = await call({
+      method: 'POST',
+      url: '/api/projects',
+      payload: { path: `${fixture.root}/missing` },
+    });
+    expect(missing.statusCode).toBe(400);
+    expect((missing.json() as { error: string }).error).toMatch(/does not exist.*--project/);
+
+    const file = fixture.write('not-a-project.txt', 'content');
+    const notDirectory = await call({
+      method: 'POST',
+      url: '/api/projects',
+      payload: { path: file },
+    });
+    expect(notDirectory.statusCode).toBe(400);
+    expect((notDirectory.json() as { error: string }).error).toMatch(/not a directory/);
+  });
 });
 
 describe('search and export', () => {
@@ -612,6 +699,13 @@ describe('search and export', () => {
 
     const empty = (await call({ url: '/api/search?q=' })).json() as { hits: unknown[] };
     expect(empty.hits).toEqual([]);
+  });
+
+  it('bounds search queries and filter fan-out', async () => {
+    expect((await call({ url: `/api/search?q=${'x'.repeat(513)}` })).statusCode).toBe(400);
+
+    const filters = Array.from({ length: 65 }, (_, index) => `p${String(index)}`).join(',');
+    expect((await call({ url: `/api/search?q=x&provider=${filters}` })).statusCode).toBe(400);
   });
 
   it('exports JSON and Markdown without leaking secrets', async () => {

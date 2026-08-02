@@ -157,29 +157,36 @@ function ProviderCard({
         </p>
       ) : null}
 
-      <table className="source-table">
-        <caption className="visually-hidden">
-          {provider.providerName} configuration locations
-        </caption>
-        <thead>
-          <tr>
-            <th scope="col">Location</th>
-            <th scope="col">Scope</th>
-            <th scope="col">Kind</th>
-            <th scope="col">Directory</th>
-            <th scope="col">Status</th>
-            <th scope="col">Files</th>
-          </tr>
-        </thead>
-        <tbody>
-          {visible.map((location) => (
-            <LocationRow
-              key={`${location.locationId}:${location.projectRoot ?? ''}`}
-              location={location}
-            />
-          ))}
-        </tbody>
-      </table>
+      <div
+        className="table-scroll source-table-scroll"
+        role="region"
+        aria-label={`${provider.providerName} configuration locations`}
+        tabIndex={0}
+      >
+        <table className="source-table">
+          <caption className="visually-hidden">
+            {provider.providerName} configuration locations
+          </caption>
+          <thead>
+            <tr>
+              <th scope="col">Location</th>
+              <th scope="col">Scope</th>
+              <th scope="col">Kind</th>
+              <th scope="col">Directory</th>
+              <th scope="col">Status</th>
+              <th scope="col">Files</th>
+            </tr>
+          </thead>
+          <tbody>
+            {visible.map((location) => (
+              <LocationRow
+                key={`${location.locationId}:${location.projectRoot ?? ''}`}
+                location={location}
+              />
+            ))}
+          </tbody>
+        </table>
+      </div>
     </li>
   );
 }

@@ -500,6 +500,32 @@ describe('aggregate - credential stores', () => {
     expect(loaded.some((path) => path.endsWith('auth.json'))).toBe(false);
   });
 
+  it('loads ordinary files concurrently without scheduling credential stores', async () => {
+    for (let index = 0; index < 12; index += 1) {
+      fixture.write(`.claude/agents/agent-${String(index)}.md`, `# Agent ${String(index)}\n`);
+    }
+    fixture.write('.codex/auth.json', '{"OPENAI_API_KEY":"not-read"}');
+
+    const scanned = await scan({ environment: fixture.environment });
+    let active = 0;
+    let peak = 0;
+    const loaded: string[] = [];
+    await aggregate(scanned, {
+      loadContent: async (file) => {
+        loaded.push(file.path);
+        active += 1;
+        peak = Math.max(peak, active);
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        active -= 1;
+        return '# content\n';
+      },
+    });
+
+    expect(peak).toBeGreaterThan(1);
+    expect(peak).toBeLessThanOrEqual(8);
+    expect(loaded.some((path) => path.endsWith('auth.json'))).toBe(false);
+  });
+
   it('never surfaces credential store contents in the inventory', async () => {
     fixture.write(
       '.codex/auth.json',

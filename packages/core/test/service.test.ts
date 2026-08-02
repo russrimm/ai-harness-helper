@@ -49,6 +49,24 @@ describe('scanning and inventory', () => {
     expect(tree.length).toBeGreaterThan(0);
     expect(tree.every((group) => group.files.length > 0)).toBe(true);
   });
+
+  it('passes project-only mode through to scans and source descriptions', async () => {
+    const harness = new HarnessService({
+      environment: fixture.environment,
+      projectRoots: [fixture.project],
+      projectsOnly: true,
+    });
+
+    const result = await harness.getScan();
+    expect(result.files.every((file) => file.scope === 'project')).toBe(true);
+
+    const sources = await harness.getSources();
+    expect(
+      sources.providers
+        .flatMap((provider) => provider.locations)
+        .every((location) => location.scope === 'project'),
+    ).toBe(true);
+  });
 });
 
 describe('authorization', () => {
@@ -521,6 +539,26 @@ describe('project roots', () => {
     await harness.addProjectRoot(fixture.project);
     const after = await harness.getScan();
     expect(after.files.length).toBeGreaterThan(before.files.length);
+  });
+
+  it('rejects missing roots and files without retaining them', async () => {
+    const harness = new HarnessService({ environment: fixture.environment });
+    const missing = `${fixture.root}/missing`;
+    await expect(harness.addProjectRoot(missing)).rejects.toThrow(/does not exist.*--project/);
+    expect(harness.projectRoots).toEqual([]);
+
+    const file = fixture.write('not-a-project.txt', 'content');
+    await expect(harness.addProjectRoot(file)).rejects.toThrow(/not a directory/);
+    expect(harness.projectRoots).toEqual([]);
+  });
+
+  it('validates roots supplied at construction before scanning', async () => {
+    const missing = `${fixture.root}/missing`;
+    const harness = new HarnessService({
+      environment: fixture.environment,
+      projectRoots: [missing],
+    });
+    await expect(harness.getScan()).rejects.toThrow(/does not exist/);
   });
 });
 

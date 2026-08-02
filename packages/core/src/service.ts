@@ -6,7 +6,7 @@
  * can be tested without a socket.
  */
 
-import { readFile } from 'node:fs/promises';
+import { readFile, stat } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, resolve, sep } from 'node:path';
 
 import { aggregate, type HarnessInventory } from './aggregate.js';
@@ -18,6 +18,7 @@ import {
   type CapabilityDocumentBody,
 } from './capability-doc.js';
 import { removeMcpServerFromText } from './mcp-edit.js';
+import { mapConcurrent, mapConcurrentBatches } from './concurrency.js';
 import { editorLanguage, parseContent, type ParseIssue } from './parsers.js';
 import { createEnvironment, selectPlatformTemplates, toDisplayPath } from './paths.js';
 import {
@@ -59,6 +60,14 @@ export interface McpRemovalSuccess extends WriteSuccess {
  * or `hash-mismatch` need no second error vocabulary.
  */
 export type McpRemovalOutcome = McpRemovalSuccess | WriteRefusal;
+
+/** A requested project root cannot be scanned safely. */
+export class InvalidProjectRootError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'InvalidProjectRootError';
+  }
+}
 
 /** A file's contents prepared for display or editing. */
 export interface FileDocument {
@@ -193,6 +202,7 @@ export interface SourcesResult {
 export interface HarnessServiceOptions {
   readonly environment?: ResolverEnvironment;
   readonly projectRoots?: readonly string[];
+  readonly projectsOnly?: boolean;
   readonly readOnly?: boolean;
   readonly writerOptions?: WriterOptions;
 }
@@ -295,13 +305,35 @@ export interface CapabilityEdit {
 }
 
 /** Maximum bytes of a single file returned to the client. */
-const MAX_DOCUMENT_BYTES = 2 * 1024 * 1024;
+export const MAX_DOCUMENT_BYTES = 2 * 1024 * 1024;
 
 /** Default cap on search hits, to keep responses bounded. */
 const DEFAULT_SEARCH_LIMIT = 200;
+const FILE_READ_CONCURRENCY = 8;
+
+async function assertProjectRoot(root: string): Promise<void> {
+  let metadata;
+  try {
+    metadata = await stat(root);
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === 'ENOENT') {
+      throw new InvalidProjectRootError(
+        `Project root does not exist: "${root}". Check the path passed to --project.`,
+      );
+    }
+    throw new InvalidProjectRootError(
+      `Project root cannot be read: "${root}". ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  if (!metadata.isDirectory()) {
+    throw new InvalidProjectRootError(`Project root is not a directory: "${root}".`);
+  }
+}
 
 export class HarnessService {
   readonly #environment: ResolverEnvironment;
+  readonly #projectsOnly: boolean;
   readonly #readOnly: boolean;
   readonly #writerOptions: WriterOptions;
   #projectRoots: string[];
@@ -312,6 +344,7 @@ export class HarnessService {
 
   constructor(options: HarnessServiceOptions = {}) {
     this.#environment = options.environment ?? createEnvironment();
+    this.#projectsOnly = options.projectsOnly ?? false;
     this.#readOnly = options.readOnly ?? false;
     this.#writerOptions = options.writerOptions ?? {};
     this.#projectRoots = [...(options.projectRoots ?? [])].map((root) => resolve(root));
@@ -327,9 +360,11 @@ export class HarnessService {
 
   /** Re-reads the filesystem and recomputes the inventory. */
   async refresh(): Promise<ScanResult> {
+    await mapConcurrent(this.#projectRoots, FILE_READ_CONCURRENCY, assertProjectRoot);
     const result = await scan({
       environment: this.#environment,
       projectRoots: this.#projectRoots,
+      projectsOnly: this.#projectsOnly,
     });
     this.#scan = result;
     this.#inventory = await aggregate(result);
@@ -380,9 +415,9 @@ export class HarnessService {
       );
     }
 
-    const providers: SourceProvider[] = registryProviders.map((provider) =>
-      this.#describeProvider(provider, filesByLocation, checkedByLocation),
-    );
+    const providers: SourceProvider[] = registryProviders
+      .map((provider) => this.#describeProvider(provider, filesByLocation, checkedByLocation))
+      .filter((provider) => provider.locations.length > 0);
 
     // Files the sweep found belong to no registry provider, but leaving them
     // out of the source map would hide the very files most likely to surprise
@@ -428,6 +463,7 @@ export class HarnessService {
     const locations: SourceLocation[] = [];
 
     for (const definition of provider.locations) {
+      if (this.#projectsOnly && definition.scope !== 'project') continue;
       const templates = selectPlatformTemplates(definition.paths, this.#environment.platform);
       // A project-scope location is checked once per registered root, so the
       // same definition can legitimately produce several rows.
@@ -539,6 +575,7 @@ export class HarnessService {
 
   async addProjectRoot(root: string): Promise<readonly string[]> {
     const resolved = resolve(root);
+    await assertProjectRoot(resolved);
     if (!this.#projectRoots.some((existing) => samePath(existing, resolved))) {
       this.#projectRoots.push(resolved);
       await this.refresh();
@@ -815,18 +852,19 @@ export class HarnessService {
     const capabilities: CapabilitySummary[] = [];
     const models = new Set<string>();
     const tools = new Set<string>();
-
-    for (const file of result.files) {
-      if (!this.#isCapabilityFile(file)) continue;
-
-      let parsed: ReturnType<typeof parseCapabilityDocument> | undefined;
-      try {
-        parsed = parseCapabilityDocument(await readFile(file.path, 'utf8'));
-      } catch {
-        // An unreadable file is still worth listing: the row explains why it
-        // cannot be opened, which beats it vanishing from the list entirely.
-      }
-
+    const files = result.files.filter((file) => this.#isCapabilityFile(file));
+    for await (const { item: file, result: parsed } of mapConcurrentBatches(
+      files,
+      FILE_READ_CONCURRENCY,
+      async (entry) => {
+        try {
+          return parseCapabilityDocument(await readFile(entry.path, 'utf8'));
+        } catch {
+          // An unreadable file is still listed below with a reason.
+          return undefined;
+        }
+      },
+    )) {
       const blocked = this.#editBlockReason(file);
       if (parsed?.model) models.add(parsed.model);
       for (const tool of parsed?.tools ?? []) tools.add(tool);
