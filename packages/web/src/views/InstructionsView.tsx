@@ -9,8 +9,9 @@
 
 import { useMemo, useState } from 'react';
 import type { ReactElement } from 'react';
-import { getInventory } from '../api/client.js';
+import { getHealth, getInventory } from '../api/client.js';
 import { Badge, scopeVariant } from '../components/Badge.js';
+import { DeleteButton, DeleteConfirm, DeleteNoticeBanner } from '../components/DeleteControl.js';
 import {
   DuplicateBadge,
   DuplicateSiblings,
@@ -19,6 +20,7 @@ import {
 } from '../components/Provenance.js';
 import { EmptyState, ErrorState, LoadingState } from '../components/StatusStates.js';
 import { useAsync } from '../hooks/useAsync.js';
+import { useFileDeletion, type FileDeletion } from '../hooks/useFileDeletion.js';
 import { SCOPE_LABELS } from '../lib/scope.js';
 import type {
   CapabilityEntry,
@@ -38,6 +40,15 @@ const CAPABILITY_KIND_LABELS: Record<CapabilityKind, string> = {
 };
 
 const CAPABILITY_KIND_ORDER: CapabilityKind[] = ['agent', 'skill', 'command', 'prompt', 'chatmode'];
+
+/** Singular nouns, so a confirmation reads "Delete skill “pdf”?". */
+const CAPABILITY_NOUNS: Record<CapabilityKind, string> = {
+  agent: 'agent',
+  skill: 'skill',
+  prompt: 'prompt',
+  command: 'command',
+  chatmode: 'chat mode',
+};
 
 interface Filters {
   text: string;
@@ -78,10 +89,17 @@ function keep(entry: FilterableEntry, label: string, filters: Filters): boolean 
 }
 
 export function InstructionsView(): ReactElement {
-  const inventory = useAsync(getInventory, []);
+  const state = useAsync(async () => {
+    const [inventory, health] = await Promise.all([getInventory(), getHealth()]);
+    return { inventory, health };
+  }, []);
   const [filters, setFilters] = useState<Filters>(NO_FILTERS);
 
-  const data = inventory.data;
+  const { reload } = state;
+  const deletion = useFileDeletion(reload);
+
+  const data = state.data?.inventory;
+  const readOnly = state.data?.health.readOnly ?? true;
   const instructions = useMemo(
     () =>
       [...(data?.instructions ?? [])]
@@ -98,13 +116,10 @@ export function InstructionsView(): ReactElement {
     [data, filters],
   );
 
-  if (inventory.loading) return <LoadingState label="Loading instructions…" />;
-  if (inventory.error) {
+  if (state.loading) return <LoadingState label="Loading instructions…" />;
+  if (state.error) {
     return (
-      <ErrorState
-        message={inventory.error}
-        {...(inventory.retryable ? { onRetry: inventory.reload } : {})}
-      />
+      <ErrorState message={state.error} {...(state.retryable ? { onRetry: state.reload } : {})} />
     );
   }
   if (!data) return <EmptyState title="No data available." />;
@@ -123,8 +138,10 @@ export function InstructionsView(): ReactElement {
       <p className="muted">
         {shown} of {total} entries shown. {duplicates} declared in more than one place. Every entry
         shows the tool, location, directory, and file it comes from — follow the file link to edit
-        it.
+        it, or use the delete button to remove the file that declares it.
       </p>
+
+      <DeleteNoticeBanner notice={deletion.notice} onDismiss={deletion.dismissNotice} />
 
       <div className="toolbar">
         <label htmlFor="policy-filter">Filter by name, tool, or folder</label>
@@ -167,7 +184,12 @@ export function InstructionsView(): ReactElement {
         ) : (
           <ol className="instruction-list">
             {instructions.map((entry) => (
-              <InstructionRow key={entry.fileId} entry={entry} />
+              <InstructionRow
+                key={entry.fileId}
+                entry={entry}
+                deletion={deletion}
+                readOnly={readOnly}
+              />
             ))}
           </ol>
         )}
@@ -178,7 +200,7 @@ export function InstructionsView(): ReactElement {
         {capabilities.length === 0 ? (
           <EmptyState title="No agents, skills, prompts, commands, or chat modes match." />
         ) : (
-          <CapabilityRollup capabilities={capabilities} />
+          <CapabilityRollup capabilities={capabilities} deletion={deletion} readOnly={readOnly} />
         )}
       </section>
 
@@ -189,7 +211,12 @@ export function InstructionsView(): ReactElement {
         ) : (
           <ul className="guardrail-list">
             {guardrails.map((entry) => (
-              <GuardrailCard key={entry.fileId} entry={entry} />
+              <GuardrailCard
+                key={entry.fileId}
+                entry={entry}
+                deletion={deletion}
+                readOnly={readOnly}
+              />
             ))}
           </ul>
         )}
@@ -198,7 +225,15 @@ export function InstructionsView(): ReactElement {
   );
 }
 
-function InstructionRow({ entry }: { entry: InstructionEntry }): ReactElement {
+function InstructionRow({
+  entry,
+  deletion,
+  readOnly,
+}: {
+  entry: InstructionEntry;
+  deletion: FileDeletion;
+  readOnly: boolean;
+}): ReactElement {
   return (
     <li className={entry.duplicate.conflicting ? 'instruction-row is-conflict' : 'instruction-row'}>
       <div className="instruction-row-header">
@@ -207,6 +242,13 @@ function InstructionRow({ entry }: { entry: InstructionEntry }): ReactElement {
           {entry.title}
         </a>
         <DuplicateBadge info={entry.duplicate} />
+        <EntryDelete
+          entry={entry}
+          label={entry.title}
+          noun="instruction file"
+          deletion={deletion}
+          readOnly={readOnly}
+        />
       </div>
       {entry.description ? <p className="instruction-description">{entry.description}</p> : null}
       <Provenance entry={entry} showScope={false} />
@@ -220,11 +262,97 @@ function InstructionRow({ entry }: { entry: InstructionEntry }): ReactElement {
         ) : null}
       </p>
       <DuplicateSiblings info={entry.duplicate} />
+      <EntryDeleteConfirm
+        entry={entry}
+        label={entry.title}
+        noun="instruction file"
+        deletion={deletion}
+      />
     </li>
   );
 }
 
-function CapabilityRollup({ capabilities }: { capabilities: CapabilityEntry[] }): ReactElement {
+/**
+ * The provenance fields the delete controls need, which is every entry type in
+ * this view — instructions, capabilities, and guardrails all carry them.
+ */
+interface DeletableEntry {
+  fileId: string;
+  displayPath: string;
+  deletable: boolean;
+  notDeletableReason?: string;
+}
+
+function confirmId(fileId: string): string {
+  return `delete-${encodeURIComponent(fileId).replace(/%/g, '-')}`;
+}
+
+/**
+ * The delete trigger for one row.
+ *
+ * Renders nothing at all in a read-only session rather than a disabled button
+ * on every row, because `--read-only` is a property of the whole run and
+ * repeating it forty times is noise.
+ */
+function EntryDelete({
+  entry,
+  label,
+  noun,
+  deletion,
+  readOnly,
+}: {
+  entry: DeletableEntry;
+  label: string;
+  noun: string;
+  deletion: FileDeletion;
+  readOnly: boolean;
+}): ReactElement | null {
+  if (readOnly) return null;
+  return (
+    <DeleteButton
+      target={{ label, noun, displayPath: entry.displayPath }}
+      deletable={entry.deletable}
+      reason={entry.notDeletableReason}
+      expanded={deletion.confirmingId === entry.fileId}
+      busy={deletion.busyId !== undefined}
+      controls={confirmId(entry.fileId)}
+      onClick={() => deletion.request(entry.fileId)}
+    />
+  );
+}
+
+function EntryDeleteConfirm({
+  entry,
+  label,
+  noun,
+  deletion,
+}: {
+  entry: DeletableEntry;
+  label: string;
+  noun: string;
+  deletion: FileDeletion;
+}): ReactElement | null {
+  if (deletion.confirmingId !== entry.fileId) return null;
+  return (
+    <DeleteConfirm
+      id={confirmId(entry.fileId)}
+      target={{ label, noun, displayPath: entry.displayPath }}
+      busy={deletion.busyId === entry.fileId}
+      onConfirm={() => deletion.confirm(entry.fileId, label)}
+      onCancel={deletion.cancel}
+    />
+  );
+}
+
+function CapabilityRollup({
+  capabilities,
+  deletion,
+  readOnly,
+}: {
+  capabilities: CapabilityEntry[];
+  deletion: FileDeletion;
+  readOnly: boolean;
+}): ReactElement {
   const groups = new Map<CapabilityKind, CapabilityEntry[]>();
   for (const capability of capabilities) {
     const list = groups.get(capability.kind);
@@ -253,6 +381,13 @@ function CapabilityRollup({ capabilities }: { capabilities: CapabilityEntry[] })
                 <div className="capability-card-header">
                   <a href={`#/files/${encodeURIComponent(capability.fileId)}`}>{capability.name}</a>
                   <DuplicateBadge info={capability.duplicate} />
+                  <EntryDelete
+                    entry={capability}
+                    label={capability.name}
+                    noun={CAPABILITY_NOUNS[capability.kind]}
+                    deletion={deletion}
+                    readOnly={readOnly}
+                  />
                 </div>
                 {capability.description ? <p>{capability.description}</p> : null}
                 <Provenance entry={capability} />
@@ -268,6 +403,12 @@ function CapabilityRollup({ capabilities }: { capabilities: CapabilityEntry[] })
                   </p>
                 ) : null}
                 <DuplicateSiblings info={capability.duplicate} />
+                <EntryDeleteConfirm
+                  entry={capability}
+                  label={capability.name}
+                  noun={CAPABILITY_NOUNS[capability.kind]}
+                  deletion={deletion}
+                />
               </li>
             ))}
           </ul>
@@ -277,13 +418,28 @@ function CapabilityRollup({ capabilities }: { capabilities: CapabilityEntry[] })
   );
 }
 
-function GuardrailCard({ entry }: { entry: GuardrailEntry }): ReactElement {
+function GuardrailCard({
+  entry,
+  deletion,
+  readOnly,
+}: {
+  entry: GuardrailEntry;
+  deletion: FileDeletion;
+  readOnly: boolean;
+}): ReactElement {
   return (
     <li className={entry.duplicate.conflicting ? 'guardrail-card is-conflict' : 'guardrail-card'}>
       <div className="guardrail-card-header">
         <a href={`#/files/${encodeURIComponent(entry.fileId)}`}>{entry.fileName}</a>
         <span className="chip">{entry.kind}</span>
         <DuplicateBadge info={entry.duplicate} />
+        <EntryDelete
+          entry={entry}
+          label={entry.fileName}
+          noun="guardrail file"
+          deletion={deletion}
+          readOnly={readOnly}
+        />
       </div>
       <Provenance entry={entry} />
       <div className="guardrail-rules">
@@ -294,6 +450,12 @@ function GuardrailCard({ entry }: { entry: GuardrailEntry }): ReactElement {
         <RuleList label="Ignore patterns" rules={entry.ignorePatterns} tone="neutral" />
       </div>
       <DuplicateSiblings info={entry.duplicate} />
+      <EntryDeleteConfirm
+        entry={entry}
+        label={entry.fileName}
+        noun="guardrail file"
+        deletion={deletion}
+      />
     </li>
   );
 }

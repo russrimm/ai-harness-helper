@@ -204,6 +204,37 @@ export async function createServer(options: ServerOptions): Promise<HarnessServe
     },
   );
 
+  app.delete<{ Params: { id: string }; Body?: { expectedHash?: string } }>(
+    '/api/files/:id',
+    async (request, reply) => {
+      if (service.readOnly) {
+        return reply.code(403).send({ error: 'This session is read-only.', code: 'read-only' });
+      }
+
+      const expectedHash = request.body?.expectedHash;
+      if (expectedHash !== undefined && typeof expectedHash !== 'string') {
+        return reply.code(400).send({ error: 'expectedHash must be a string when supplied.' });
+      }
+      if (
+        typeof expectedHash === 'string' &&
+        (expectedHash.length === 0 || expectedHash.length > MAX_IDENTIFIER_CHARS)
+      ) {
+        return reply
+          .code(400)
+          .send({ error: `expectedHash must be 1-${MAX_IDENTIFIER_CHARS} characters.` });
+      }
+
+      const outcome = await service.deleteFile(request.params.id, expectedHash);
+      if (!outcome) {
+        return reply.code(404).send({ error: 'No such file, or it is not in the scanned set.' });
+      }
+      if (!outcome.ok) {
+        return reply.code(statusForRefusal(outcome.code)).send(outcome);
+      }
+      return outcome;
+    },
+  );
+
   app.delete<{ Params: { id: string; name: string }; Body?: { expectedHash?: string } }>(
     '/api/files/:id/mcp/:name',
     async (request, reply) => {
@@ -469,6 +500,7 @@ function statusForRefusal(code: string): number {
   switch (code) {
     case 'read-only':
     case 'credential-store':
+    case 'not-deletable':
       return 403;
     case 'invalid-content':
     case 'unsupported-format':

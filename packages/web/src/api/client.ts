@@ -10,6 +10,7 @@ import type {
   CapabilityDocument,
   CapabilityEdit,
   CapabilityListResponse,
+  DeleteOutcome,
   FileDocument,
   HarnessInventory,
   HealthResponse,
@@ -277,6 +278,28 @@ export async function deleteMcpServer(
     body && typeof body === 'object' && 'error' in body && typeof body.error === 'string'
       ? body.error
       : `Removing "${serverName}" failed with status ${response.status}.`;
+  return { ok: false, code: 'write-failed', message };
+}
+
+/**
+ * Deletes a whole discovered file.
+ *
+ * Follows {@link deleteMcpServer} in returning its refusal shape rather than
+ * throwing: "this file holds more than that entry" and "it changed on disk"
+ * are answers the user has to read before deciding what to do next.
+ */
+export async function deleteFile(fileId: string, expectedHash?: string): Promise<DeleteOutcome> {
+  const response = await fetchOrThrow(`/api/files/${encodeURIComponent(fileId)}`, {
+    method: 'DELETE',
+    headers: { 'content-type': 'application/json', 'x-harness-token': token },
+    body: JSON.stringify(expectedHash === undefined ? {} : { expectedHash }),
+  });
+  const body = await readJson(response);
+  if (body && typeof body === 'object' && 'ok' in body) return body as DeleteOutcome;
+  const message =
+    body && typeof body === 'object' && 'error' in body && typeof body.error === 'string'
+      ? body.error
+      : `Deleting the file failed with status ${response.status}.`;
   return { ok: false, code: 'write-failed', message };
 }
 

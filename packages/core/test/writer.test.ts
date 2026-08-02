@@ -2,7 +2,7 @@ import { chmodSync, readFileSync, existsSync, readdirSync, statSync } from 'node
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { hashContent, validateContent, writeConfigFile } from '../src/writer.js';
+import { deleteConfigFile, hashContent, validateContent, writeConfigFile } from '../src/writer.js';
 import { createFixture, type Fixture } from './fixture.js';
 
 let fixture: Fixture;
@@ -380,5 +380,100 @@ describe('writeConfigFile - successful writes', () => {
 
     expect(result.ok).toBe(true);
     expect(readFileSync(path, 'utf8')).toBe('# New\n\nBe concise.\n');
+  });
+});
+
+describe('deleteConfigFile', () => {
+  const AGENT = '---\nname: helper\n---\n\nBe useful.\n';
+
+  it('refuses every delete in read-only mode', async () => {
+    const path = fixture.write('.claude/agents/helper.md', AGENT);
+
+    const result = await deleteConfigFile(
+      { path, sensitivity: 'normal', expectedHash: hashContent(AGENT) },
+      { readOnly: true, backupRoot },
+    );
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.code).toBe('read-only');
+    expect(existsSync(path)).toBe(true);
+  });
+
+  it('refuses to delete a credential store', async () => {
+    const path = fixture.write('.codex/auth.json', '{"token":"x"}');
+
+    const result = await deleteConfigFile(
+      { path, sensitivity: 'credential-store', expectedHash: hashContent('{"token":"x"}') },
+      { backupRoot },
+    );
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.code).toBe('credential-store');
+    expect(existsSync(path)).toBe(true);
+  });
+
+  it('reports a file that is already gone', async () => {
+    const result = await deleteConfigFile(
+      { path: join(fixture.home, '.claude', 'agents', 'gone.md'), sensitivity: 'normal' },
+      { backupRoot },
+    );
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.code).toBe('not-found');
+  });
+
+  it('aborts when the file changed on disk after it was loaded', async () => {
+    const path = fixture.write('.claude/agents/helper.md', AGENT);
+    const staleHash = hashContent(AGENT);
+    fixture.write('.claude/agents/helper.md', '# rewritten\n');
+
+    const result = await deleteConfigFile(
+      { path, sensitivity: 'normal', expectedHash: staleHash },
+      { backupRoot },
+    );
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.code).toBe('hash-mismatch');
+      expect(result.currentHash).toBe(hashContent('# rewritten\n'));
+    }
+    expect(existsSync(path)).toBe(true);
+  });
+
+  it('backs the file up before removing it', async () => {
+    const path = fixture.write('.claude/agents/helper.md', AGENT);
+
+    const result = await deleteConfigFile(
+      { path, sensitivity: 'normal', expectedHash: hashContent(AGENT) },
+      { backupRoot },
+    );
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(existsSync(result.backupPath)).toBe(true);
+      expect(readFileSync(result.backupPath, 'utf8')).toBe(AGENT);
+      expect(result.bytesRemoved).toBe(Buffer.byteLength(AGENT, 'utf8'));
+      expect(result.path).toBe(path);
+    }
+    expect(existsSync(path)).toBe(false);
+  });
+
+  it('deletes without a hash when the caller does not supply one', async () => {
+    const path = fixture.write('.claude/agents/helper.md', AGENT);
+
+    const result = await deleteConfigFile({ path, sensitivity: 'normal' }, { backupRoot });
+
+    expect(result.ok).toBe(true);
+    expect(existsSync(path)).toBe(false);
+  });
+
+  it('leaves the containing directory in place', async () => {
+    const path = fixture.write('.claude/skills/review/SKILL.md', '# Review\n');
+
+    const result = await deleteConfigFile({ path, sensitivity: 'normal' }, { backupRoot });
+
+    expect(result.ok).toBe(true);
+    expect(existsSync(path)).toBe(false);
+    expect(existsSync(join(fixture.home, '.claude', 'skills', 'review'))).toBe(true);
   });
 });

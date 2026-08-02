@@ -243,11 +243,17 @@ button {
   cursor: pointer;
 }
 
-button:hover:not(:disabled) {
+button:hover:not(:disabled):not([aria-disabled='true']) {
   border-color: var(--color-accent);
 }
 
-button:disabled {
+/*
+ * `aria-disabled` covers controls that are permanently unavailable but stay
+ * focusable, so a keyboard or screen-reader user can reach them and find out
+ * why. They must look identical to a truly disabled control.
+ */
+button:disabled,
+button[aria-disabled='true'] {
   opacity: 0.55;
   cursor: not-allowed;
 }
@@ -1008,9 +1014,46 @@ button.danger {
   color: var(--color-error);
 }
 
-button.danger:hover:not(:disabled) {
+button.danger:hover:not(:disabled):not([aria-disabled='true']) {
   border-color: var(--color-error);
   background: var(--color-error-bg);
+}
+
+/*
+ * A delete trigger sits inside a row of names and badges, so it is square and
+ * quiet until hovered. The glyph alone would be unlabelled, so every instance
+ * carries a visually hidden name naming the entry it removes.
+ */
+button.icon-button {
+  padding: var(--space-1) var(--space-2);
+  line-height: 1;
+}
+
+/*
+ * Confirming a delete is the last chance to notice the wrong row was clicked,
+ * so it is tinted like the other destructive surfaces and states the full path.
+ */
+.delete-confirm {
+  margin-top: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--color-error);
+  border-radius: var(--radius);
+  background: var(--color-error-bg);
+}
+
+.delete-confirm h4 {
+  margin: 0 0 var(--space-2);
+  font-size: 1rem;
+}
+
+.delete-confirm p {
+  margin: 0 0 var(--space-3);
+}
+
+.delete-confirm-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
 }
 
 /* ----- Instructions view ----- */

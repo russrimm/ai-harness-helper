@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
@@ -448,6 +448,130 @@ describe('removing an MCP server', () => {
       url: `/api/files/${id}/mcp/github`,
       token: null,
     });
+    expect(response.statusCode).toBe(401);
+  });
+});
+
+describe('deleting a file', () => {
+  async function claudeMd() {
+    const id = await firstFileId('.claude/CLAUDE.md');
+    const document = (await call({ url: `/api/files/${id}` })).json() as {
+      hash: string;
+      deletable: boolean;
+      file: { path: string };
+    };
+    return { id, hash: document.hash, path: document.file.path, deletable: document.deletable };
+  }
+
+  it('deletes the file and reports the backup', async () => {
+    const { id, hash, path } = await claudeMd();
+
+    const response = await call({
+      method: 'DELETE',
+      url: `/api/files/${id}`,
+      payload: { expectedHash: hash },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json() as { ok: boolean; backupPath: string; bytesRemoved: number };
+    expect(body.ok).toBe(true);
+    expect(readFileSync(body.backupPath, 'utf8')).toBe(samples.claudeMd);
+    expect(body.bytesRemoved).toBeGreaterThan(0);
+    expect(existsSync(path)).toBe(false);
+
+    const scan = (await call({ url: '/api/scan' })).json() as { files: { id: string }[] };
+    expect(scan.files.some((entry) => entry.id === id)).toBe(false);
+  });
+
+  it('deletes without an expected hash', async () => {
+    const { id, path } = await claudeMd();
+    const response = await call({ method: 'DELETE', url: `/api/files/${id}` });
+
+    expect(response.statusCode).toBe(200);
+    expect(existsSync(path)).toBe(false);
+  });
+
+  it('409s a stale hash rather than removing the file', async () => {
+    const { id, path } = await claudeMd();
+    const response = await call({
+      method: 'DELETE',
+      url: `/api/files/${id}`,
+      payload: { expectedHash: 'stale' },
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect((response.json() as { code: string }).code).toBe('hash-mismatch');
+    expect(existsSync(path)).toBe(true);
+  });
+
+  it('403s a file that holds more than the entry shown', async () => {
+    const id = await firstFileId('.claude/settings.json');
+    const response = await call({ method: 'DELETE', url: `/api/files/${id}` });
+
+    expect(response.statusCode).toBe(403);
+    expect((response.json() as { code: string }).code).toBe('not-deletable');
+  });
+
+  it('403s a credential store', async () => {
+    const id = await firstFileId('.claude/.credentials.json');
+    const response = await call({ method: 'DELETE', url: `/api/files/${id}` });
+
+    expect(response.statusCode).toBe(403);
+    expect((response.json() as { code: string }).code).toBe('not-deletable');
+  });
+
+  it('400s an expectedHash that is not a bounded string', async () => {
+    const { id } = await claudeMd();
+
+    expect(
+      (
+        await call({
+          method: 'DELETE',
+          url: `/api/files/${id}`,
+          payload: { expectedHash: 42 },
+        })
+      ).statusCode,
+    ).toBe(400);
+
+    expect(
+      (
+        await call({
+          method: 'DELETE',
+          url: `/api/files/${id}`,
+          payload: { expectedHash: 'x'.repeat(1000) },
+        })
+      ).statusCode,
+    ).toBe(400);
+  });
+
+  it('404s an unknown file id', async () => {
+    const response = await call({ method: 'DELETE', url: '/api/files/nope' });
+    expect(response.statusCode).toBe(404);
+  });
+
+  it('403s in read-only mode', async () => {
+    await app.close();
+    await start({ readOnly: true });
+
+    const { id, path } = await claudeMd();
+    const response = await call({ method: 'DELETE', url: `/api/files/${id}` });
+
+    expect(response.statusCode).toBe(403);
+    expect((response.json() as { code: string }).code).toBe('read-only');
+    expect(existsSync(path)).toBe(true);
+  });
+
+  it('marks a read-only session undeletable in the document itself', async () => {
+    await app.close();
+    await start({ readOnly: true });
+
+    const { deletable } = await claudeMd();
+    expect(deletable).toBe(false);
+  });
+
+  it('requires a token like every other mutating route', async () => {
+    const { id } = await claudeMd();
+    const response = await call({ method: 'DELETE', url: `/api/files/${id}`, token: null });
     expect(response.statusCode).toBe(401);
   });
 });

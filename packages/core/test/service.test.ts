@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { HarnessService } from '../src/service.js';
@@ -325,6 +325,130 @@ describe('removing an MCP server', () => {
     const harness = service();
     await harness.getScan();
     expect(await harness.removeMcpServer('nope', 'github')).toBeUndefined();
+  });
+});
+
+describe('deleting a file', () => {
+  /** Finds a scanned file by the tail of its path, normalizing separators. */
+  async function fileEndingWith(harness: HarnessService, suffix: string) {
+    const result = await harness.getScan();
+    const file = result.files.find((entry) => entry.path.replace(/\\/g, '/').endsWith(suffix));
+    if (!file) throw new Error(`fixture missing ${suffix}`);
+    return file;
+  }
+
+  it('deletes an agent file, backs it up, and rescans', async () => {
+    const harness = service();
+    const file = await fileEndingWith(harness, '.claude/agents/reviewer.md');
+
+    const outcome = await harness.deleteFile(file.id);
+    expect(outcome?.ok).toBe(true);
+    if (!outcome?.ok) return;
+
+    expect(outcome.backupPath).toBeTruthy();
+    expect(readFileSync(outcome.backupPath, 'utf8')).toBe(samples.agentFile);
+    expect(existsSync(file.path)).toBe(false);
+
+    // The cached scan would otherwise still list the deleted file.
+    const after = await harness.getScan();
+    expect(after.files.some((entry) => entry.id === file.id)).toBe(false);
+  });
+
+  it('honours an expected hash so a changed file is not deleted blind', async () => {
+    const harness = service();
+    const file = await fileEndingWith(harness, '.claude/agents/reviewer.md');
+
+    const outcome = await harness.deleteFile(file.id, 'stale-hash');
+    expect(outcome?.ok).toBe(false);
+    if (outcome && !outcome.ok) expect(outcome.code).toBe('hash-mismatch');
+    expect(existsSync(file.path)).toBe(true);
+  });
+
+  it('refuses in read-only mode', async () => {
+    const harness = service({ readOnly: true });
+    const file = await fileEndingWith(harness, '.claude/agents/reviewer.md');
+
+    const outcome = await harness.deleteFile(file.id);
+    expect(outcome?.ok).toBe(false);
+    if (outcome && !outcome.ok) expect(outcome.code).toBe('read-only');
+    expect(existsSync(file.path)).toBe(true);
+  });
+
+  it('refuses a settings file that holds more than the entry shown', async () => {
+    const harness = service();
+    const file = await fileEndingWith(harness, '.claude/settings.json');
+
+    const outcome = await harness.deleteFile(file.id);
+    expect(outcome?.ok).toBe(false);
+    if (outcome && !outcome.ok) expect(outcome.code).toBe('not-deletable');
+    expect(existsSync(file.path)).toBe(true);
+  });
+
+  it('refuses an mcp file, which has surgical per-server removal instead', async () => {
+    const harness = service();
+    const file = await fileEndingWith(harness, '.cursor/mcp.json');
+
+    const outcome = await harness.deleteFile(file.id);
+    expect(outcome?.ok).toBe(false);
+    if (outcome && !outcome.ok) expect(outcome.code).toBe('not-deletable');
+    expect(existsSync(file.path)).toBe(true);
+  });
+
+  it('refuses a credential store', async () => {
+    const harness = service();
+    const result = await harness.getScan();
+    const file = result.files.find((entry) => entry.sensitivity === 'credential-store');
+    expect(file).toBeDefined();
+
+    const outcome = await harness.deleteFile(file?.id ?? '');
+    expect(outcome?.ok).toBe(false);
+    if (outcome && !outcome.ok) expect(outcome.code).toBe('not-deletable');
+    expect(existsSync(file?.path ?? '')).toBe(true);
+  });
+
+  it('returns undefined for an unknown file id', async () => {
+    const harness = service();
+    await harness.getScan();
+    expect(await harness.deleteFile('nope')).toBeUndefined();
+  });
+
+  it('tells callers which files may be deleted', async () => {
+    const harness = service();
+    const agent = await fileEndingWith(harness, '.claude/agents/reviewer.md');
+    const settings = await fileEndingWith(harness, '.claude/settings.json');
+
+    const agentDoc = await harness.getDocument(agent.id);
+    expect(agentDoc?.deletable).toBe(true);
+    expect(agentDoc?.notDeletableReason).toBeUndefined();
+
+    const settingsDoc = await harness.getDocument(settings.id);
+    expect(settingsDoc?.deletable).toBe(false);
+    expect(settingsDoc?.notDeletableReason).toBeTruthy();
+
+    const capabilities = await harness.listCapabilities();
+    expect(capabilities.capabilities.every((entry) => typeof entry.deletable === 'boolean')).toBe(
+      true,
+    );
+
+    const inventory = await harness.getInventory();
+    const entries = [...inventory.instructions, ...inventory.capabilities, ...inventory.guardrails];
+    expect(entries.length).toBeGreaterThan(0);
+    expect(entries.every((entry) => typeof entry.deletable === 'boolean')).toBe(true);
+    expect(
+      inventory.guardrails
+        .filter((entry) => entry.filePath.replace(/\\/g, '/').endsWith('settings.json'))
+        .every((entry) => entry.deletable === false),
+    ).toBe(true);
+    expect(inventory.capabilities.every((entry) => entry.deletable)).toBe(true);
+  });
+
+  it('reports read-only in the document flags, not just at the API', async () => {
+    const harness = service({ readOnly: true });
+    const agent = await fileEndingWith(harness, '.claude/agents/reviewer.md');
+
+    const doc = await harness.getDocument(agent.id);
+    expect(doc?.deletable).toBe(false);
+    expect(doc?.notDeletableReason).toContain('read-only');
   });
 });
 

@@ -41,7 +41,8 @@ there is no telemetry, and the tool makes no outbound network requests at all.
   copilot-instructions, `.cursorrules` and friends in precedence order, plus
   your agents, skills, prompts, chat modes, commands, permission rules, hooks
   and ignore files. Every row shows the tool, location, directory and file it
-  came from, and is flagged if something else declares the same thing.
+  came from, is flagged if something else declares the same thing, and carries a
+  delete button when the file holds nothing but that one entry.
 - **Skills & agents** — a form editor for the capability files themselves.
   Rename a skill, point an agent at a different model, bump its version, change
   its tool allowlist, or rewrite its instructions, without hand-editing YAML.
@@ -53,7 +54,7 @@ there is no telemetry, and the tool makes no outbound network requests at all.
   is safe to attach to a bug report.
 
 You can also **edit** any config file in place, with backups, validation, and
-conflict detection.
+conflict detection, and **delete** the ones that hold a single entry.
 
 ### Duplicates and conflicts
 
@@ -151,6 +152,7 @@ npx ai-harness-helper --projects-only --project ~/code/my-app
 | Aider                     | `~/.aider.conf.yml`, model settings                                                                                                        |
 | Zed                       | `~/.config/zed/settings.json`, project `.zed/`                                                                                             |
 | Amazon Q                  | `~/.aws/amazonq/mcp.json`, project `.amazonq/`                                                                                             |
+| OpenCode                  | `opencode.json` global and project config, global `AGENTS.md`                                                                              |
 | Universal                 | `AGENTS.md` at any level, bare `mcp.json` / `.mcp.json`                                                                                    |
 
 Anything harness-shaped that no tool claims is reported as **unattributed**
@@ -220,6 +222,38 @@ file that did not already contain one.
 Clearing a field removes the key rather than writing an empty value: several
 tools read `model: ''` as a request for a model literally named the empty
 string.
+
+### Deleting a file
+
+Instructions, agents, skills, prompts, commands, chat modes, memories,
+dedicated permission files, and ignore files can be deleted outright from the
+UI. These are the kinds where one file holds exactly one entry, so removing the
+file removes precisely the thing you pointed at and nothing else.
+
+Deletion reuses the write chain: refused in `--read-only` mode, refused for
+credential stores, checked against the content hash you loaded so a file that
+changed underneath you is never removed blind, and backed up to
+`~/.ai-harness-helper/backups/` before the file is unlinked. Recovering from a
+mistake is a file copy.
+
+Everything else shows a disabled button explaining why, rather than a delete
+that quietly takes more than it offered:
+
+- **Settings files** hold a permission block _alongside_ unrelated settings, so
+  deleting one to drop a guardrail would also drop the tool's model choice and
+  everything else it keeps there. Open the file in the editor and remove the
+  part you want gone.
+- **MCP files** declare many servers, and one of them (`~/.claude.json`) also
+  holds per-project history. Use the surgical per-server removal above instead.
+- **Catalogs** are published by the tool and reappear on its next launch.
+- **Credential files** and anything marked as a credential store are never
+  touched here at all.
+- **Extensions** are managed by their installer.
+- **Unknown** files are of a shape this build cannot classify confidently.
+
+Only the discovered file is removed. A skill that lives in its own folder as
+`SKILL.md` leaves the folder behind, and the confirmation names the exact path
+so there is no ambiguity about what goes.
 
 ## Development
 
