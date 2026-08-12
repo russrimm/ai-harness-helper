@@ -7,14 +7,10 @@
   "engines": {
     "node": ">=20.11.0"
   },
-  "workspaces": [
-    "packages/core",
-    "packages/cli",
-    "packages/web"
-  ],
+  "packageManager": "pnpm@10.34.5",
   "scripts": {
-    "build": "npm run build --workspace @ai-harness-helper/core && npm run build --workspace @ai-harness-helper/web && npm run build --workspace ai-harness-helper",
-    "typecheck": "tsc --build --force packages/core packages/cli && npm run typecheck --workspace @ai-harness-helper/web",
+    "build": "pnpm --filter @ai-harness-helper/core run build && pnpm --filter @ai-harness-helper/web run build && pnpm --filter ai-harness-helper run build",
+    "typecheck": "tsc --build --force packages/core packages/cli && pnpm --filter @ai-harness-helper/web run typecheck",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
@@ -39,7 +35,12 @@
   "allowScripts": {
     "esbuild@0.28.1": true
   },
-  "overrides": {
-    "esbuild": "^0.28.1"
+  "pnpm": {
+    "overrides": {
+      "esbuild": "^0.28.1"
+    },
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
   }
 }

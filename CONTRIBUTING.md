@@ -40,10 +40,10 @@ accepted product decision.
 Before opening a pull request, run the primary checks:
 
 ```bash
-npm run typecheck
-npm test
-npm run lint
-npm run build
+pnpm run typecheck
+pnpm test
+pnpm run lint
+pnpm run build
 ```
 
 The dependency-free repository baseline is also available:
@@ -55,9 +55,9 @@ bash .github/scripts/validate-repository.sh
 The root scripts are `build`, `typecheck`, `lint`, `lint:fix`, `format`,
 `format:check`, `test`, `test:watch`, `start`, and `clean`.
 
-On Windows, the repo-wide `npm run format:check` currently reports 67 files
+On Windows, the repo-wide `pnpm run format:check` currently reports 67 files
 because of a known CRLF checkout condition. Check only files you touched with
-`npx prettier --check --end-of-line auto <paths>`. Do not reformat the whole
+`pnpm exec prettier --check --end-of-line auto <paths>`. Do not reformat the whole
 repository to make the repo-wide check pass.
 
 ## Pull requests
