@@ -762,8 +762,10 @@ a.stat-card-link:focus-visible .stat-card-label {
 .files-layout {
   display: grid;
   grid-template-columns: minmax(220px, 300px) 1fr;
+  grid-template-rows: minmax(0, 1fr);
   gap: var(--space-5);
-  align-items: start;
+  align-items: stretch;
+  height: calc(100vh - 220px);
 }
 
 .file-tree {
@@ -771,10 +773,8 @@ a.stat-card-link:focus-visible .stat-card-label {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
   padding: var(--space-3);
-  max-height: calc(100vh - 220px);
+  min-height: 0;
   overflow-y: auto;
-  position: sticky;
-  top: var(--space-3);
 }
 
 .file-tree-provider {
@@ -832,6 +832,9 @@ a.stat-card-link:focus-visible .stat-card-label {
 
 .file-detail {
   min-width: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
 }
 
 .file-detail-panel {
@@ -839,6 +842,29 @@ a.stat-card-link:focus-visible .stat-card-label {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
   padding: var(--space-4);
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.file-detail-code {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+.file-detail-code > [role='group'] {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.file-detail-code > [role='group'] > div {
+  flex: 1;
+  min-height: 0;
 }
 
 .file-detail-header {
@@ -1331,11 +1357,25 @@ button.icon-button {
 
   .files-layout {
     grid-template-columns: 1fr;
+    grid-template-rows: auto auto;
+    height: auto;
   }
 
   .file-tree {
-    position: static;
     max-height: 320px;
+  }
+
+  .file-detail {
+    height: auto;
+  }
+
+  .file-detail-panel {
+    flex: none;
+  }
+
+  .file-detail-code {
+    flex: none;
+    min-height: 50vh;
   }
 }
 

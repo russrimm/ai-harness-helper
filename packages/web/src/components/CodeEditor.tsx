@@ -37,7 +37,9 @@ export function CodeEditor({
   ariaLabel: string;
   /**
    * Editor height. The default suits a whole config file; a caller showing a
-   * short excerpt can shrink it so the page is not mostly blank gutter.
+   * short excerpt can shrink it so the page is not mostly blank gutter. Pass
+   * `'100%'` when the wrapping element already constrains the available
+   * height (e.g. a flex layout that should reach the bottom of the screen).
    */
   height?: string;
 }): ReactElement {
