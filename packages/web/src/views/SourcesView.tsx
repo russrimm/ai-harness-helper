@@ -148,15 +148,6 @@ function ProviderCard({
       </div>
       <p className="muted">{provider.description}</p>
 
-      {provider.directories.length > 0 ? (
-        <p className="source-directories">
-          <span className="label">Directories:</span>{' '}
-          {provider.directories.map((directory) => (
-            <code key={directory}>{directory}</code>
-          ))}
-        </p>
-      ) : null}
-
       <div
         className="table-scroll source-table-scroll"
         role="region"
