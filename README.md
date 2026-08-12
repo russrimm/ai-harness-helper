@@ -263,26 +263,26 @@ so there is no ambiguity about what goes.
 Requires Node.js 20.11 or newer.
 
 ```bash
-npm install
-npm run build
-npm test
-npm start -- --no-open
+pnpm install
+pnpm run build
+pnpm test
+pnpm start -- --no-open
 ```
 
-| Command             | Purpose                                             |
-| ------------------- | --------------------------------------------------- |
-| `npm run bootstrap` | Install and build only if either output is missing. |
-| `npm run build`     | Build all packages.                                 |
-| `npm test`          | Run the test suite.                                 |
-| `npm run typecheck` | Typecheck all packages.                             |
-| `npm run lint`      | Lint.                                               |
-| `npm run format`    | Format with Prettier.                               |
+| Command              | Purpose                                             |
+| -------------------- | --------------------------------------------------- |
+| `pnpm run bootstrap` | Install and build only if either output is missing. |
+| `pnpm run build`     | Build all packages.                                 |
+| `pnpm test`          | Run the test suite.                                 |
+| `pnpm run typecheck` | Typecheck all packages.                             |
+| `pnpm run lint`      | Lint.                                               |
+| `pnpm run format`    | Format with Prettier.                               |
 
-`npm start` runs `npm run bootstrap` first, so a fresh clone or a new git
-worktree can go straight to `npm start` without a separate install and build.
+`pnpm start` runs `pnpm run bootstrap` first, so a fresh clone or a new git
+worktree can go straight to `pnpm start` without a separate install and build.
 Warm starts skip both steps.
 
-The repository is an npm workspaces monorepo:
+The repository is a pnpm workspaces monorepo:
 
 - `packages/core` — pure TypeScript. Registry, path resolution, scanner,
   parsers, redactor, aggregator, writer. No network, no server, fully unit

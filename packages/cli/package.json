@@ -17,7 +17,7 @@
     "typecheck": "tsc --noEmit --project tsconfig.json"
   },
   "dependencies": {
-    "@ai-harness-helper/core": "0.1.0",
+    "@ai-harness-helper/core": "workspace:^",
     "@fastify/static": "^10.1.2",
     "fastify": "^5.10.0"
   }

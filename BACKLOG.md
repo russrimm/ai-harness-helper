@@ -45,7 +45,7 @@ persistent service is the wrong trust posture for something reading
 credentials.
 
 - **Runtime:** TypeScript on Node.js 20.11+.
-- **Stack:** Fastify API, React + Vite UI, npm workspaces monorepo.
+- **Stack:** Fastify API, React + Vite UI, pnpm workspaces monorepo.
 - **Platforms:** Windows, macOS, and Linux from v1.
 - **Install/update/remove:** none — `npx` runs the current version and leaves
   nothing behind except backups the user creates by editing.
@@ -75,7 +75,7 @@ Implemented and verified against a real machine as well as synthetic fixtures.
 
 ### P1.2 CI for the selected stack — RESOLVED
 
-`.github/workflows/ci.yml` runs typecheck, build, lint, format check, `npm
+`.github/workflows/ci.yml` runs typecheck, build, lint, format check, `pnpm
 audit`, and the test suite across Windows, macOS, and Linux, plus the declared
 minimum Node version. Actions are SHA-pinned, permissions are read-only, and
 every job has a timeout. The baseline workflow is retained.
