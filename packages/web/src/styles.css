@@ -650,8 +650,10 @@ a.stat-card-link:focus-visible .stat-card-label {
 }
 
 .finding-row {
-  display: flex;
-  gap: var(--space-3);
+  display: grid;
+  grid-template-columns: minmax(7.5rem, 10.5rem) minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-4);
   padding: var(--space-3);
   border-radius: var(--radius-md);
   background: var(--color-bg-raised);
@@ -671,22 +673,50 @@ a.stat-card-link:focus-visible .stat-card-label {
   border-inline-start-color: var(--color-info);
 }
 
+.finding-badge {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  min-width: 7.5rem;
+  min-height: 7.5rem;
+  width: 100%;
+  max-width: 10.5rem;
+  border-radius: 999px;
+  padding: 0.75rem 1rem;
+  font-size: clamp(0.9rem, 1.2vw, 1.15rem);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: lowercase;
+}
+
+.finding-badge > span:first-child {
+  font-size: 1.75rem;
+  line-height: 1;
+}
+
 .finding-body {
   flex: 1;
+  min-width: 0;
 }
 
 .finding-title {
-  font-weight: 600;
+  font-weight: 700;
+  font-size: clamp(1.4rem, 2vw, 2.15rem);
+  line-height: 1.2;
   margin: 0;
 }
 
 .finding-detail {
   margin: var(--space-1) 0;
+  font-size: clamp(1rem, 1.3vw, 1.2rem);
+  line-height: 1.6;
 }
 
 .finding-remediation {
   color: var(--color-text-muted);
   margin: var(--space-1) 0;
+  font-size: clamp(0.98rem, 1.15vw, 1.08rem);
+  line-height: 1.5;
 }
 
 .finding-files {
