@@ -36,12 +36,14 @@ const ICONS: Record<BadgeVariant, string> = {
 export function Badge({
   variant,
   children,
+  className,
 }: {
   variant: BadgeVariant;
   children: ReactNode;
+  className?: string;
 }): ReactElement {
   return (
-    <span className={`badge badge-${variant}`}>
+    <span className={['badge', `badge-${variant}`, className].filter(Boolean).join(' ')}>
       <span aria-hidden="true">{ICONS[variant]}</span> {children}
     </span>
   );

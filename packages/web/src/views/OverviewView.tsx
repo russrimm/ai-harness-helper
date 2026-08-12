@@ -441,7 +441,9 @@ export function OverviewView(): ReactElement {
 function FindingRow({ finding }: { finding: HealthFinding }): ReactElement {
   return (
     <li className={`finding-row finding-${finding.severity}`}>
-      <Badge variant={SEVERITY_VARIANT[finding.severity]}>{finding.severity}</Badge>
+      <Badge variant={SEVERITY_VARIANT[finding.severity]} className="finding-badge">
+        {finding.severity}
+      </Badge>
       <div className="finding-body">
         <p className="finding-title">{finding.title}</p>
         <p className="finding-detail">{finding.detail}</p>
