@@ -55,10 +55,6 @@ jobs:
         # project validates the core cross-platform behavior on Linux and Windows.
         os: [ubuntu-latest, windows-latest]
         node: ['22.x']
-        include:
-          # Guards the declared minimum in `engines`.
-          - os: ubuntu-latest
-            node: '20.11.0'
     steps:
       - name: Check out
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
