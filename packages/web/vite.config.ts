@@ -1,10 +1,11 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import tailwindcss from '@tailwindcss/vite';
 
 // The UI is served by the CLI's Fastify server from `packages/cli/public`.
 // Relative asset paths keep the bundle mount-point agnostic.
 export default defineConfig({
-  plugins: [react()],
+  plugins: [tailwindcss(), react()],
   base: './',
   build: {
     outDir: 'dist',
