@@ -1,1340 +1,1240 @@
 /*
- * AI Harness Helper — theme and layout.
+ * AI Harness Helper — Tailwind CSS v4 theme and component layer.
  *
- * Colors are CSS custom properties, defaulted for light mode and swapped by
- * `prefers-color-scheme`, then overridden by an explicit [data-theme] the
- * user chose (set by `useTheme.ts`). This order lets the manual toggle win
- * over the OS preference while still respecting it by default.
+ * Colors live as plain CSS custom properties (`--ahh-*`), defaulted for
+ * light mode and swapped by `prefers-color-scheme`, then overridden by an
+ * explicit [data-theme] the user chose (set by `useTheme.ts`). This order
+ * lets the manual toggle win over the OS preference while still respecting
+ * it by default. Every token is re-exposed through `@theme inline` as a
+ * first-class Tailwind color utility (`bg-surface`, `text-fg-muted`, …) so
+ * components can use ordinary Tailwind classes while still reacting to the
+ * runtime theme swap — a plain `@theme` block bakes values in at build time
+ * and would not pick up the [data-theme] override.
  */
+
+@import 'tailwindcss';
+
+@custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
+
+@theme {
+  --font-sans: 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;
+  --font-mono: 'Cascadia Code', 'Consolas', 'SFMono-Regular', Menlo, monospace;
+}
 
 :root {
   color-scheme: light dark;
 
-  --font-sans: 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;
-  --font-mono: 'Cascadia Code', 'Consolas', 'SFMono-Regular', Menlo, monospace;
+  --ahh-bg: #f8fafc;
+  --ahh-bg-raised: #ffffff;
+  --ahh-bg-sunken: #eef2f7;
+  --ahh-border: #e2e8f0;
+  --ahh-border-strong: #cbd5e1;
+  --ahh-text: #0f172a;
+  --ahh-text-muted: #64748b;
+  --ahh-link: #4338ca;
+  --ahh-link-visited: #6d28d9;
+  --ahh-focus: #4338ca;
+  --ahh-accent: #4338ca;
+  --ahh-accent-fg: #ffffff;
 
-  --radius-sm: 4px;
-  --radius-md: 8px;
-  --radius-lg: 12px;
-  --space-1: 0.25rem;
-  --space-2: 0.5rem;
-  --space-3: 0.75rem;
-  --space-4: 1rem;
-  --space-5: 1.5rem;
-  --space-6: 2rem;
+  --ahh-ok: #047857;
+  --ahh-ok-bg: #ecfdf5;
+  --ahh-warning: #b45309;
+  --ahh-warning-bg: #fffbeb;
+  --ahh-error: #be123c;
+  --ahh-error-bg: #fff1f2;
+  --ahh-info: #0369a1;
+  --ahh-info-bg: #f0f9ff;
+  --ahh-neutral: #475569;
+  --ahh-neutral-bg: #f1f5f9;
 
-  --color-bg: #f6f7f9;
-  --color-bg-raised: #ffffff;
-  --color-bg-sunken: #eceef2;
-  --color-border: #d3d8e0;
-  --color-border-strong: #aab2c0;
-  --color-text: #171a21;
-  --color-text-muted: #565f6f;
-  --color-link: #0b57a4;
-  --color-link-visited: #5b3aa6;
-  --color-focus: #0b57a4;
-  --color-accent: #0b57a4;
-
-  --color-ok: #146c2e;
-  --color-ok-bg: #e4f4e8;
-  --color-warning: #7a4a00;
-  --color-warning-bg: #fdf0dc;
-  --color-error: #8a1224;
-  --color-error-bg: #fbe4e7;
-  --color-info: #0b4f78;
-  --color-info-bg: #e1f0fb;
-  --color-neutral: #3d4451;
-  --color-neutral-bg: #e6e8ed;
-
-  --shadow-sm: 0 1px 2px rgba(20, 24, 33, 0.08);
-  --shadow-md: 0 4px 14px rgba(20, 24, 33, 0.12);
+  --ahh-shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06), 0 1px 1px rgba(15, 23, 42, 0.04);
+  --ahh-shadow-md: 0 12px 28px -8px rgba(15, 23, 42, 0.16), 0 2px 6px -2px rgba(15, 23, 42, 0.08);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --color-bg: #14161c;
-    --color-bg-raised: #1d2028;
-    --color-bg-sunken: #101217;
-    --color-border: #333a48;
-    --color-border-strong: #4c5566;
-    --color-text: #eef0f4;
-    --color-text-muted: #a4acbc;
-    --color-link: #7cc0ff;
-    --color-link-visited: #cdb4ff;
-    --color-focus: #7cc0ff;
-    --color-accent: #7cc0ff;
+    --ahh-bg: #020617;
+    --ahh-bg-raised: #0f172a;
+    --ahh-bg-sunken: #1e293b;
+    --ahh-border: #334155;
+    --ahh-border-strong: #475569;
+    --ahh-text: #f1f5f9;
+    --ahh-text-muted: #94a3b8;
+    --ahh-link: #a5b4fc;
+    --ahh-link-visited: #c4b5fd;
+    --ahh-focus: #a5b4fc;
+    --ahh-accent: #818cf8;
+    --ahh-accent-fg: #0f172a;
 
-    --color-ok: #6fd48f;
-    --color-ok-bg: #10321d;
-    --color-warning: #ffcd7a;
-    --color-warning-bg: #3a2a04;
-    --color-error: #ff97a3;
-    --color-error-bg: #401019;
-    --color-info: #86caff;
-    --color-info-bg: #0c2d42;
-    --color-neutral: #c4cad6;
-    --color-neutral-bg: #262b35;
+    --ahh-ok: #34d399;
+    --ahh-ok-bg: rgba(16, 185, 129, 0.16);
+    --ahh-warning: #fcd34d;
+    --ahh-warning-bg: rgba(245, 158, 11, 0.16);
+    --ahh-error: #fb7185;
+    --ahh-error-bg: rgba(225, 29, 72, 0.2);
+    --ahh-info: #7dd3fc;
+    --ahh-info-bg: rgba(2, 132, 199, 0.2);
+    --ahh-neutral: #cbd5e1;
+    --ahh-neutral-bg: rgba(100, 116, 139, 0.2);
 
-    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
-    --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.5);
+    --ahh-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --ahh-shadow-md: 0 16px 32px -8px rgba(0, 0, 0, 0.55), 0 2px 8px -2px rgba(0, 0, 0, 0.4);
   }
 }
 
 :root[data-theme='light'] {
-  --color-bg: #f6f7f9;
-  --color-bg-raised: #ffffff;
-  --color-bg-sunken: #eceef2;
-  --color-border: #d3d8e0;
-  --color-border-strong: #aab2c0;
-  --color-text: #171a21;
-  --color-text-muted: #565f6f;
-  --color-link: #0b57a4;
-  --color-link-visited: #5b3aa6;
-  --color-focus: #0b57a4;
-  --color-accent: #0b57a4;
-  --color-ok: #146c2e;
-  --color-ok-bg: #e4f4e8;
-  --color-warning: #7a4a00;
-  --color-warning-bg: #fdf0dc;
-  --color-error: #8a1224;
-  --color-error-bg: #fbe4e7;
-  --color-info: #0b4f78;
-  --color-info-bg: #e1f0fb;
-  --color-neutral: #3d4451;
-  --color-neutral-bg: #e6e8ed;
+  --ahh-bg: #f8fafc;
+  --ahh-bg-raised: #ffffff;
+  --ahh-bg-sunken: #eef2f7;
+  --ahh-border: #e2e8f0;
+  --ahh-border-strong: #cbd5e1;
+  --ahh-text: #0f172a;
+  --ahh-text-muted: #64748b;
+  --ahh-link: #4338ca;
+  --ahh-link-visited: #6d28d9;
+  --ahh-focus: #4338ca;
+  --ahh-accent: #4338ca;
+  --ahh-accent-fg: #ffffff;
+  --ahh-ok: #047857;
+  --ahh-ok-bg: #ecfdf5;
+  --ahh-warning: #b45309;
+  --ahh-warning-bg: #fffbeb;
+  --ahh-error: #be123c;
+  --ahh-error-bg: #fff1f2;
+  --ahh-info: #0369a1;
+  --ahh-info-bg: #f0f9ff;
+  --ahh-neutral: #475569;
+  --ahh-neutral-bg: #f1f5f9;
+  --ahh-shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06), 0 1px 1px rgba(15, 23, 42, 0.04);
+  --ahh-shadow-md: 0 12px 28px -8px rgba(15, 23, 42, 0.16), 0 2px 6px -2px rgba(15, 23, 42, 0.08);
 }
 
 :root[data-theme='dark'] {
-  --color-bg: #14161c;
-  --color-bg-raised: #1d2028;
-  --color-bg-sunken: #101217;
-  --color-border: #333a48;
-  --color-border-strong: #4c5566;
-  --color-text: #eef0f4;
-  --color-text-muted: #a4acbc;
-  --color-link: #7cc0ff;
-  --color-link-visited: #cdb4ff;
-  --color-focus: #7cc0ff;
-  --color-accent: #7cc0ff;
-  --color-ok: #6fd48f;
-  --color-ok-bg: #10321d;
-  --color-warning: #ffcd7a;
-  --color-warning-bg: #3a2a04;
-  --color-error: #ff97a3;
-  --color-error-bg: #401019;
-  --color-info: #86caff;
-  --color-info-bg: #0c2d42;
-  --color-neutral: #c4cad6;
-  --color-neutral-bg: #262b35;
-}
-
-* {
-  box-sizing: border-box;
-}
-
-html,
-body {
-  margin: 0;
-  padding: 0;
-}
-
-body {
-  background: var(--color-bg);
-  color: var(--color-text);
-  font-family: var(--font-sans);
-  font-size: 16px;
-  line-height: 1.5;
-}
-
-#root {
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-}
-
-h1,
-h2,
-h3,
-h4 {
-  line-height: 1.25;
-  font-weight: 600;
-}
-
-h1 {
-  font-size: 1.375rem;
-  margin: 0;
-}
-
-h2 {
-  font-size: 1.25rem;
-  margin: 0 0 var(--space-3);
-}
-
-h3 {
-  font-size: 1.05rem;
-  margin: var(--space-5) 0 var(--space-2);
-}
-
-h4 {
-  font-size: 0.95rem;
-  margin: var(--space-3) 0 var(--space-1);
-  color: var(--color-text-muted);
-}
-
-p {
-  margin: 0 0 var(--space-2);
-}
-
-a {
-  color: var(--color-link);
-}
-
-a:visited {
-  color: var(--color-link-visited);
-}
-
-code,
-pre {
-  font-family: var(--font-mono);
-  font-size: 0.85em;
-}
-
-table {
-  border-collapse: collapse;
-  width: 100%;
-}
-
-.table-scroll {
-  max-width: 100%;
-  overflow-x: auto;
-  overscroll-behavior-inline: contain;
-}
-
-.table-scroll > table {
-  min-width: 100%;
-}
-
-th,
-td {
-  text-align: left;
-  padding: var(--space-2) var(--space-3);
-  border-bottom: 1px solid var(--color-border);
-  vertical-align: top;
-}
-
-/* Focus visibility: never rely on the browser default alone. */
-a:focus-visible,
-button:focus-visible,
-input:focus-visible,
-select:focus-visible,
-[tabindex]:focus-visible {
-  outline: 3px solid var(--color-focus);
-  outline-offset: 2px;
-  border-radius: var(--radius-sm);
-}
-
-button {
-  font: inherit;
-  background: var(--color-bg-raised);
-  color: var(--color-text);
-  border: 1px solid var(--color-border-strong);
-  border-radius: var(--radius-md);
-  padding: var(--space-2) var(--space-4);
-  cursor: pointer;
-}
-
-button:hover:not(:disabled):not([aria-disabled='true']) {
-  border-color: var(--color-accent);
+  --ahh-bg: #020617;
+  --ahh-bg-raised: #0f172a;
+  --ahh-bg-sunken: #1e293b;
+  --ahh-border: #334155;
+  --ahh-border-strong: #475569;
+  --ahh-text: #f1f5f9;
+  --ahh-text-muted: #94a3b8;
+  --ahh-link: #a5b4fc;
+  --ahh-link-visited: #c4b5fd;
+  --ahh-focus: #a5b4fc;
+  --ahh-accent: #818cf8;
+  --ahh-accent-fg: #0f172a;
+  --ahh-ok: #34d399;
+  --ahh-ok-bg: rgba(16, 185, 129, 0.16);
+  --ahh-warning: #fcd34d;
+  --ahh-warning-bg: rgba(245, 158, 11, 0.16);
+  --ahh-error: #fb7185;
+  --ahh-error-bg: rgba(225, 29, 72, 0.2);
+  --ahh-info: #7dd3fc;
+  --ahh-info-bg: rgba(2, 132, 199, 0.2);
+  --ahh-neutral: #cbd5e1;
+  --ahh-neutral-bg: rgba(100, 116, 139, 0.2);
+  --ahh-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --ahh-shadow-md: 0 16px 32px -8px rgba(0, 0, 0, 0.55), 0 2px 8px -2px rgba(0, 0, 0, 0.4);
 }
 
 /*
- * `aria-disabled` covers controls that are permanently unavailable but stay
- * focusable, so a keyboard or screen-reader user can reach them and find out
- * why. They must look identical to a truly disabled control.
+ * Re-expose the runtime `--ahh-*` tokens as Tailwind theme variables via
+ * `@theme inline`, so ordinary utility classes (`bg-surface`, `text-fg-muted`,
+ * `border-border`, …) stay in sync with the [data-theme] swap above instead
+ * of being baked in at build time (which a plain `@theme` block would do).
  */
-button:disabled,
-button[aria-disabled='true'] {
-  opacity: 0.55;
-  cursor: not-allowed;
-}
-
-input[type='text'],
-input[type='search'] {
-  font: inherit;
-  color: var(--color-text);
-  background: var(--color-bg-raised);
-  border: 1px solid var(--color-border-strong);
-  border-radius: var(--radius-md);
-  padding: var(--space-2) var(--space-3);
-}
-
-select {
-  font: inherit;
-  color: var(--color-text);
-  background: var(--color-bg-raised);
-  border: 1px solid var(--color-border-strong);
-  border-radius: var(--radius-md);
-  padding: var(--space-1) var(--space-2);
-}
-
-label {
-  font-weight: 600;
-  font-size: 0.85rem;
-}
-
-fieldset {
-  border: none;
-  padding: 0;
-  margin: 0 0 var(--space-3);
-}
-
-legend {
-  font-weight: 600;
-  font-size: 0.85rem;
-  padding: 0;
-  margin-bottom: var(--space-1);
-}
-
-.visually-hidden {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
-}
-
-.skip-link {
-  position: absolute;
-  left: -9999px;
-  top: 0;
-  z-index: 100;
-  background: var(--color-accent);
-  color: var(--color-bg-raised);
-  padding: var(--space-2) var(--space-4);
-  border-radius: 0 0 var(--radius-md) 0;
-}
-
-.skip-link:focus {
-  left: 0;
-}
-
-.muted {
-  color: var(--color-text-muted);
-}
-
-.small {
-  font-size: 0.85rem;
-}
-
-/* ----- App shell ----- */
-
-.app-header {
-  background: var(--color-bg-raised);
-  border-bottom: 1px solid var(--color-border);
-  padding: var(--space-3) var(--space-5);
-}
-
-.app-header-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-4);
-  margin-bottom: var(--space-2);
-}
-
-.app-header-actions {
-  display: flex;
-  align-items: center;
-  gap: var(--space-4);
-}
-
-.theme-toggle {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-.nav-list {
-  list-style: none;
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-1);
-  margin: 0;
-  padding: 0;
-}
-
-.nav-list a {
-  display: inline-block;
-  padding: var(--space-2) var(--space-3);
-  border-radius: var(--radius-md);
-  text-decoration: none;
-  color: var(--color-text);
-}
-
-.nav-list a:hover {
-  background: var(--color-bg-sunken);
-}
-
-.nav-list a[aria-current='page'] {
-  background: var(--color-accent);
-  color: var(--color-bg-raised);
-  font-weight: 600;
-}
-
-main {
-  flex: 1;
-  padding: var(--space-5);
-  max-width: 1280px;
-  width: 100%;
-  margin: 0 auto;
-}
-
-.view-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-}
-
-/* ----- Status states ----- */
-
-.state-message {
-  padding: var(--space-4);
-  border-radius: var(--radius-md);
-  background: var(--color-bg-raised);
-  border: 1px solid var(--color-border);
-}
-
-.state-error {
-  background: var(--color-error-bg);
-  border-color: var(--color-error);
-  color: var(--color-error);
-}
-
-.state-error-inline {
-  color: var(--color-error);
-}
-
-.state-empty {
-  color: var(--color-text-muted);
-}
-
-/* ----- Badges, chips ----- */
-
-.badge {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  font-size: 0.8rem;
-  font-weight: 600;
-  padding: 0.15rem var(--space-2);
-  border-radius: 999px;
-  white-space: nowrap;
-}
-
-.badge-managed {
-  background: var(--color-neutral-bg);
-  color: var(--color-neutral);
-}
-
-.badge-user {
-  background: var(--color-info-bg);
-  color: var(--color-info);
-}
-
-.badge-project {
-  background: var(--color-ok-bg);
-  color: var(--color-ok);
-}
-
-.badge-info {
-  background: var(--color-info-bg);
-  color: var(--color-info);
-}
-
-.badge-warning {
-  background: var(--color-warning-bg);
-  color: var(--color-warning);
-}
-
-.badge-error,
-.badge-conflict {
-  background: var(--color-error-bg);
-  color: var(--color-error);
-}
-
-.badge-ok {
-  background: var(--color-ok-bg);
-  color: var(--color-ok);
-}
-
-.badge-duplicate {
-  background: var(--color-warning-bg);
-  color: var(--color-warning);
-}
-
-.badge-disabled,
-.badge-neutral {
-  background: var(--color-neutral-bg);
-  color: var(--color-neutral);
-}
-
-.chip,
-.chip-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  font-size: 0.8rem;
-  background: var(--color-bg-sunken);
-  border: 1px solid var(--color-border);
-  color: var(--color-text);
-  border-radius: 999px;
-  padding: 0.15rem var(--space-3);
-}
-
-.chip-toggle {
-  cursor: pointer;
-}
-
-.chip-toggle[aria-pressed='true'] {
-  background: var(--color-accent);
-  border-color: var(--color-accent);
-  color: var(--color-bg-raised);
-  font-weight: 600;
-}
-
-.chip-list,
-.chip-toggle-list {
-  list-style: none;
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-  margin: var(--space-2) 0;
-  padding: 0;
-}
-
-.chip-toggle-list {
-  padding: 0;
-}
-
-.chip-list.inline {
-  margin: 0;
-  gap: var(--space-1);
-}
-
-/* ----- Notices ----- */
-
-.notice {
-  border-radius: var(--radius-md);
-  padding: var(--space-3) var(--space-4);
-  margin: var(--space-3) 0;
-  border: 1px solid transparent;
-}
-
-.notice-info {
-  background: var(--color-info-bg);
-  color: var(--color-info);
-  border-color: var(--color-info);
-}
-
-.notice-ok {
-  background: var(--color-ok-bg);
-  color: var(--color-ok);
-  border-color: var(--color-ok);
-}
-
-.notice-warning {
-  background: var(--color-warning-bg);
-  color: var(--color-warning);
-  border-color: var(--color-warning);
-}
-
-.notice-error {
-  background: var(--color-error-bg);
-  color: var(--color-error);
-  border-color: var(--color-error);
-}
-
-.notice-actions {
-  display: flex;
-  gap: var(--space-2);
-  margin-top: var(--space-2);
-}
-
-/* ----- Overview ----- */
-
-.stat-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-  gap: var(--space-3);
-  margin-bottom: var(--space-2);
-}
-
-.stat-card {
-  background: var(--color-bg-raised);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  padding: var(--space-4);
-  box-shadow: var(--shadow-sm);
-}
-
-.stat-card-value {
-  font-size: 2rem;
-  font-weight: 700;
-  margin: 0;
-}
-
-.stat-card-label {
-  margin: 0;
-  color: var(--color-text-muted);
-  font-size: 0.9rem;
-}
-
-.stat-card-hint {
-  margin: var(--space-1) 0 0;
-  color: var(--color-text-muted);
-  font-size: 0.78rem;
-}
-
-/* Linked cards keep the card's own look rather than the default link look. */
-a.stat-card-link {
-  display: block;
-  color: inherit;
-  text-decoration: none;
-}
-
-a.stat-card-link:hover,
-a.stat-card-link:focus-visible {
-  border-color: var(--color-accent);
-  box-shadow: var(--shadow-md);
-}
-
-a.stat-card-link:focus-visible {
-  border-radius: var(--radius-lg);
-}
-
-a.stat-card-link:hover .stat-card-label,
-a.stat-card-link:focus-visible .stat-card-label {
-  color: var(--color-text);
-  text-decoration: underline;
-}
-
-.stat-card-error {
-  border-color: var(--color-error);
-}
-
-.stat-card-error .stat-card-value {
-  color: var(--color-error);
-}
-
-.stat-card-warning {
-  border-color: var(--color-warning);
-}
-
-.stat-card-warning .stat-card-value {
-  color: var(--color-warning);
-}
-
-.findings-list,
-.root-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-
-.finding-row {
-  display: grid;
-  grid-template-columns: 6rem minmax(0, 1fr);
-  align-items: start;
-  gap: var(--space-3);
-  padding: var(--space-3) var(--space-4);
-  border-radius: var(--radius-md);
-  background: var(--color-bg-raised);
-  border: 1px solid var(--color-border);
-  border-inline-start: 4px solid var(--color-border-strong);
-}
-
-.finding-error {
-  border-inline-start-color: var(--color-error);
-}
-
-.finding-warning {
-  border-inline-start-color: var(--color-warning);
-}
-
-.finding-info {
-  border-inline-start-color: var(--color-info);
-}
-
-.finding-badge {
-  display: inline-flex;
-  justify-content: center;
-  align-items: center;
-  min-width: 0;
-  min-height: 0;
-  width: auto;
-  max-width: none;
-  border-radius: 999px;
-  padding: 0.25rem 0.6rem;
-  font-size: 0.75rem;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  text-transform: lowercase;
-}
-
-.finding-badge > span:first-child {
-  font-size: 0.9rem;
-  line-height: 1;
-}
-
-.finding-body {
-  flex: 1;
-  min-width: 0;
-}
-
-.finding-title {
-  font-weight: 700;
-  font-size: 1rem;
-  line-height: 1.35;
-  margin: 0;
-}
-
-.finding-detail {
-  margin: var(--space-1) 0;
-  font-size: 0.9rem;
-  line-height: 1.45;
-}
-
-.finding-remediation {
-  color: var(--color-text-muted);
-  margin: var(--space-1) 0;
-  font-size: 0.85rem;
-  line-height: 1.4;
-}
-
-.finding-files {
-  list-style: none;
-  margin: var(--space-1) 0 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  font-size: 0.85rem;
-}
-
-.root-list li {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: var(--space-3);
-  padding: var(--space-2) var(--space-3);
-  background: var(--color-bg-raised);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-}
-
-.root-path {
-  flex: 1;
-  font-family: var(--font-mono);
-  font-size: 0.9rem;
-  overflow-wrap: break-word;
-}
-
-.root-form-row {
-  display: flex;
-  gap: var(--space-2);
-  margin-top: var(--space-1);
-}
-
-.root-form-row input {
-  flex: 1;
-}
-
-/* ----- Files view ----- */
-
-.files-layout {
-  display: grid;
-  grid-template-columns: minmax(220px, 300px) 1fr;
-  grid-template-rows: minmax(0, 1fr);
-  gap: var(--space-5);
-  align-items: stretch;
-  height: calc(100vh - 220px);
-}
-
-.file-tree {
-  background: var(--color-bg-raised);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  padding: var(--space-3);
-  min-height: 0;
-  overflow-y: auto;
-}
-
-.file-tree-provider {
-  margin-bottom: var(--space-3);
-}
-
-.file-tree-provider h3 {
-  margin: 0 0 var(--space-1);
-  font-size: 0.95rem;
-}
-
-.file-tree-scope h4 {
-  margin: var(--space-2) 0 var(--space-1);
-}
-
-.file-tree-scope ul {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.file-tree-link {
-  display: flex;
-  justify-content: space-between;
-  gap: var(--space-2);
-  text-decoration: none;
-  color: var(--color-text);
-  padding: var(--space-1) var(--space-2);
-  border-radius: var(--radius-sm);
-  font-size: 0.9rem;
-}
-
-.file-tree-link:hover {
-  background: var(--color-bg-sunken);
-}
-
-.file-tree-link.active {
-  background: var(--color-accent);
-  color: var(--color-bg-raised);
-  font-weight: 600;
-}
-
-.file-tree-name {
-  overflow-wrap: break-word;
-}
-
-.file-tree-kind {
-  flex-shrink: 0;
-  font-size: 0.75rem;
-}
-
-.file-tree-link.active .file-tree-kind {
-  color: var(--color-bg-raised);
-}
-
-.file-detail {
-  min-width: 0;
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-}
-
-.file-detail-panel {
-  background: var(--color-bg-raised);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  padding: var(--space-4);
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
-
-.file-detail-code {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-}
-
-.file-detail-code > [role='group'] {
-  flex: 1;
-  min-width: 0;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
-
-.file-detail-code > [role='group'] > div {
-  flex: 1;
-  min-height: 0;
-}
-
-.file-detail-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: var(--space-3);
-  flex-wrap: wrap;
-}
-
-.file-detail-badges {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  flex-wrap: wrap;
-}
-
-.file-path {
-  font-family: var(--font-mono);
-  font-size: 0.85rem;
-  overflow-wrap: break-word;
-}
-
-.file-detail-actions {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  margin: var(--space-3) 0;
-}
-
-.file-detail-actions .icon-button {
-  min-width: 4rem;
-  min-height: 2.625rem;
-  padding: var(--space-2) var(--space-4);
-}
-
-.redaction-panel {
-  background: var(--color-bg-sunken);
-  border-radius: var(--radius-md);
-  padding: var(--space-3);
-  margin: var(--space-3) 0;
-}
-
-.revealed-value {
-  background: var(--color-warning-bg);
-  color: var(--color-warning);
-  padding: 0.1rem var(--space-2);
-  border-radius: var(--radius-sm);
-}
-
-.save-confirm {
-  margin-top: var(--space-4);
-  padding: var(--space-4);
-  border: 1px solid var(--color-border-strong);
-  border-radius: var(--radius-lg);
-  background: var(--color-bg-sunken);
-}
-
-.save-confirm-actions {
-  display: flex;
-  gap: var(--space-2);
-  margin-top: var(--space-3);
-}
-
-.diff-view {
-  max-height: 40vh;
-  overflow: auto;
-  background: var(--color-bg-raised);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  padding: var(--space-2) var(--space-3);
-  white-space: pre-wrap;
-}
-
-.diff-line {
-  padding: 0 var(--space-1);
-}
-
-.diff-add {
-  background: var(--color-ok-bg);
-  color: var(--color-ok);
-}
-
-.diff-remove {
-  background: var(--color-error-bg);
-  color: var(--color-error);
-}
-
-/* ----- MCP view ----- */
-
-.mcp-table {
-  background: var(--color-bg-raised);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  overflow: hidden;
-}
-
-.mcp-row-conflict {
-  background: var(--color-error-bg);
-}
-
-.mcp-target {
-  font-family: var(--font-mono);
-  font-size: 0.85rem;
-  overflow-wrap: break-word;
-}
-
-.mcp-definitions-table {
-  background: var(--color-bg-sunken);
-  border-radius: var(--radius-md);
-}
-
-.tree-toggle {
-  background: transparent;
-  border: none;
-  padding: var(--space-1);
-  font-size: 1rem;
-  line-height: 1;
-}
-
-/*
- * Overlap groups are an inference, not a fact read off disk, so they are set
- * apart from the table and carry a left rule keyed to confidence — the same
- * visual grammar the findings list uses for severity.
- */
-.mcp-overlaps {
-  margin-bottom: var(--space-4);
-}
-
-.overlap-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-}
-
-.overlap-card {
-  padding: var(--space-3);
-  border-radius: var(--radius-md);
-  background: var(--color-bg-raised);
-  border: 1px solid var(--color-border);
-  border-inline-start: 4px solid var(--color-border-strong);
-}
-
-.overlap-high {
-  border-inline-start-color: var(--color-warning);
-}
-
-.overlap-medium {
-  border-inline-start-color: var(--color-info);
-}
-
-.overlap-low {
-  border-inline-start-color: var(--color-border-strong);
-}
-
-.overlap-head {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-}
+@theme inline {
+  --color-canvas: var(--ahh-bg);
+  --color-surface: var(--ahh-bg-raised);
+  --color-surface-muted: var(--ahh-bg-sunken);
+  --color-border: var(--ahh-border);
+  --color-border-strong: var(--ahh-border-strong);
+  --color-fg: var(--ahh-text);
+  --color-fg-muted: var(--ahh-text-muted);
+  --color-link: var(--ahh-link);
+  --color-link-visited: var(--ahh-link-visited);
+  --color-focus: var(--ahh-focus);
+  --color-primary: var(--ahh-accent);
+  --color-primary-fg: var(--ahh-accent-fg);
+  --color-ok: var(--ahh-ok);
+  --color-ok-bg: var(--ahh-ok-bg);
+  --color-warning: var(--ahh-warning);
+  --color-warning-bg: var(--ahh-warning-bg);
+  --color-error: var(--ahh-error);
+  --color-error-bg: var(--ahh-error-bg);
+  --color-info: var(--ahh-info);
+  --color-info-bg: var(--ahh-info-bg);
+  --color-neutral: var(--ahh-neutral);
+  --color-neutral-bg: var(--ahh-neutral-bg);
+  --shadow-card-sm: var(--ahh-shadow-sm);
+  --shadow-card-md: var(--ahh-shadow-md);
+}
+
+@layer base {
+  * {
+    @apply box-border;
+  }
+
+  html,
+  body {
+    @apply m-0 p-0;
+  }
+
+  body {
+    @apply bg-canvas text-fg font-sans text-base leading-normal antialiased;
+  }
+
+  #root {
+    @apply flex min-h-screen flex-col;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    @apply font-semibold leading-tight text-fg;
+  }
+
+  h1 {
+    @apply m-0 text-[1.375rem] tracking-tight;
+  }
+
+  h2 {
+    @apply mb-3 mt-0 text-xl;
+  }
+
+  h3 {
+    @apply mb-2 mt-6 text-base;
+  }
+
+  h4 {
+    @apply mb-1 mt-3 text-sm font-semibold text-fg-muted;
+  }
+
+  p {
+    @apply mb-2 mt-0;
+  }
+
+  a {
+    @apply text-link;
+  }
+
+  a:visited {
+    @apply text-link-visited;
+  }
+
+  code,
+  pre {
+    @apply font-mono text-[0.85em];
+  }
+
+  table {
+    @apply w-full border-collapse;
+  }
+
+  th,
+  td {
+    @apply border-b border-border px-3 py-2 text-left align-top;
+  }
+
+  /* Focus visibility: never rely on the browser default alone. */
+  a:focus-visible,
+  button:focus-visible,
+  input:focus-visible,
+  select:focus-visible,
+  textarea:focus-visible,
+  [tabindex]:focus-visible {
+    @apply rounded-sm outline outline-[3px] outline-offset-2 outline-focus;
+  }
+
+  button {
+    @apply cursor-pointer rounded-lg border border-border-strong bg-surface px-4 py-2 font-sans text-sm text-fg transition-colors;
+  }
+
+  button:hover:not(:disabled):not([aria-disabled='true']) {
+    @apply border-primary;
+  }
+
+  /*
+   * `aria-disabled` covers controls that are permanently unavailable but stay
+   * focusable, so a keyboard or screen-reader user can reach them and find
+   * out why. They must look identical to a truly disabled control.
+   */
+  button:disabled,
+  button[aria-disabled='true'] {
+    @apply cursor-not-allowed opacity-55;
+  }
+
+  input[type='text'],
+  input[type='search'] {
+    @apply rounded-lg border border-border-strong bg-surface px-3 py-2 font-sans text-sm text-fg;
+  }
+
+  select {
+    @apply rounded-lg border border-border-strong bg-surface px-2 py-1 font-sans text-sm text-fg;
+  }
+
+  label {
+    @apply text-sm font-semibold;
+  }
 
-.overlap-head h4 {
-  margin: 0;
-  font-size: 1rem;
-}
-
-.overlap-detail {
-  margin: var(--space-2) 0;
-}
-
-.overlap-members {
-  background: var(--color-bg-sunken);
-  border-radius: var(--radius-md);
-}
-
-.plain-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-/*
- * Deleting a server rewrites a file the user did not open, so the affected
- * paths are listed in full and the row is tinted to match the other
- * destructive surfaces rather than blending into the table.
- */
-.mcp-remove-row > td {
-  background: var(--color-error-bg);
-}
-
-.mcp-remove-confirm h4 {
-  margin: 0 0 var(--space-2);
-  font-size: 1rem;
-}
-
-.mcp-remove-confirm .plain-list li {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-  padding: var(--space-1) 0;
-}
-
-button.danger {
-  border-color: var(--color-error);
-  color: var(--color-error);
-}
-
-button.danger:hover:not(:disabled):not([aria-disabled='true']) {
-  border-color: var(--color-error);
-  background: var(--color-error-bg);
-}
-
-/*
- * A delete trigger sits inside a row of names and badges, so it is square and
- * quiet until hovered. The glyph alone would be unlabelled, so every instance
- * carries a visually hidden name naming the entry it removes.
- */
-button.icon-button {
-  padding: var(--space-1) var(--space-2);
-  line-height: 1;
-}
-
-/*
- * Confirming a delete is the last chance to notice the wrong row was clicked,
- * so it is tinted like the other destructive surfaces and states the full path.
- */
-.delete-confirm {
-  margin-top: var(--space-3);
-  padding: var(--space-3);
-  border: 1px solid var(--color-error);
-  border-radius: var(--radius);
-  background: var(--color-error-bg);
-}
-
-.delete-confirm h4 {
-  margin: 0 0 var(--space-2);
-  font-size: 1rem;
-}
-
-.delete-confirm p {
-  margin: 0 0 var(--space-3);
-}
-
-.delete-confirm-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-}
-
-/* ----- Instructions view ----- */
-
-.view-instructions section {
-  margin-bottom: var(--space-6);
-}
-
-.instruction-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-
-.instruction-row {
-  background: var(--color-bg-raised);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  padding: var(--space-3);
-}
-
-.instruction-row-header {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  flex-wrap: wrap;
-}
-
-.instruction-title {
-  font-weight: 600;
-}
-
-.instruction-description {
-  margin: var(--space-1) 0;
-}
+  fieldset {
+    @apply m-0 mb-3 border-0 p-0;
+  }
 
-.capability-groups {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
+  legend {
+    @apply m-0 mb-1 p-0 text-sm font-semibold;
+  }
 }
 
-.capability-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  gap: var(--space-2);
-}
-
-.capability-card {
-  background: var(--color-bg-raised);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  padding: var(--space-3);
-}
-
-.capability-card-header {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  flex-wrap: wrap;
-  margin-bottom: var(--space-1);
-}
-
-.guardrail-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-}
-
-.guardrail-card {
-  background: var(--color-bg-raised);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  padding: var(--space-3);
-}
-
-.guardrail-card-header {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  flex-wrap: wrap;
-  margin-bottom: var(--space-2);
-}
-
-.guardrail-rules {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-  gap: var(--space-3);
-}
-
-.rule-list h4,
-.rule-list h5 {
-  margin-top: 0;
-  font-size: 0.85rem;
-}
-
-.rule-list ul {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-}
-
-.rule-list-ok h4,
-.rule-list-ok h5 {
-  color: var(--color-ok);
-}
-
-.rule-list-error h4,
-.rule-list-error h5 {
-  color: var(--color-error);
-}
-
-.rule-list-warning h4,
-.rule-list-warning h5 {
-  color: var(--color-warning);
-}
-
-/* ----- Search view ----- */
-
-.search-box {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  max-width: 480px;
-  margin-bottom: var(--space-3);
-}
-
-.search-box input {
-  font-size: 1rem;
-}
-
-.search-result-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-}
-
-.search-result-file h3 {
-  margin: 0 0 var(--space-2);
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-.search-hit-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-}
-
-.search-hit-list a {
-  display: flex;
-  gap: var(--space-2);
-  text-decoration: none;
-  padding: var(--space-1) var(--space-2);
-  border-radius: var(--radius-sm);
-  align-items: baseline;
-}
+@layer components {
+  /* ----- Accessibility helpers ----- */
 
-.search-hit-list a:hover {
-  background: var(--color-bg-sunken);
-}
-
-.search-hit-line {
-  color: var(--color-text-muted);
-  font-size: 0.8rem;
-  flex-shrink: 0;
-  min-width: 4.5rem;
-}
+  .visually-hidden {
+    @apply absolute h-px w-px -m-px overflow-hidden whitespace-nowrap border-0 p-0;
+    clip: rect(0, 0, 0, 0);
+  }
 
-.search-hit-text {
-  overflow-wrap: break-word;
-}
+  .skip-link {
+    @apply absolute left-[-9999px] top-0 z-[100] rounded-br-lg bg-primary px-4 py-2 text-primary-fg;
+  }
 
-/* Uses the themed info pair rather than the UA default yellow, which is
-   unreadable against the dark theme's light-on-dark text. */
-.search-hit-text mark {
-  background: var(--color-info-bg);
-  color: var(--color-info);
-  border-radius: 2px;
-  padding: 0 1px;
-  font-weight: 600;
-}
+  .skip-link:focus {
+    @apply left-0;
+  }
 
-/* ----- Export view ----- */
+  .muted {
+    @apply text-fg-muted;
+  }
 
-.export-actions {
-  display: flex;
-  gap: var(--space-3);
-  margin-bottom: var(--space-3);
-}
+  .small {
+    @apply text-[0.85rem];
+  }
 
-.markdown-preview {
-  max-height: 50vh;
-  overflow: auto;
-  background: var(--color-bg-raised);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  padding: var(--space-3);
-  white-space: pre-wrap;
+  /* ----- App shell ----- */
+
+  .app-header {
+    @apply border-b border-border bg-surface px-5 py-3;
+  }
+
+  .app-header-row {
+    @apply mb-2 flex items-center justify-between gap-4;
+  }
+
+  .app-header-actions {
+    @apply flex items-center gap-4;
+  }
+
+  .theme-toggle {
+    @apply flex items-center gap-2;
+  }
+
+  .nav-list {
+    @apply m-0 flex list-none flex-wrap gap-1 p-0;
+  }
+
+  .nav-list a {
+    @apply inline-block rounded-lg px-3 py-2 text-sm font-medium text-fg no-underline transition-colors;
+  }
+
+  .nav-list a:hover {
+    @apply bg-surface-muted;
+  }
+
+  .nav-list a[aria-current='page'] {
+    @apply bg-primary text-primary-fg font-semibold;
+  }
+
+  main {
+    @apply mx-auto w-full max-w-[1280px] flex-1 p-5;
+  }
+
+  .view-header {
+    @apply mb-1 flex flex-wrap items-center justify-between gap-3;
+  }
+
+  .view > section {
+    @apply mb-6;
+  }
+
+  /* ----- Status states ----- */
+
+  .state-message {
+    @apply rounded-xl border border-border bg-surface p-4;
+  }
+
+  .state-error {
+    @apply border-error bg-error-bg text-error;
+  }
+
+  .state-error-inline {
+    @apply text-error;
+  }
+
+  .state-empty {
+    @apply text-fg-muted;
+  }
+
+  /* ----- Badges, chips ----- */
+
+  .badge {
+    @apply inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2 py-[0.15rem] text-[0.8rem] font-semibold;
+  }
+
+  .badge-managed {
+    @apply bg-neutral-bg text-neutral;
+  }
+
+  .badge-user {
+    @apply bg-info-bg text-info;
+  }
+
+  .badge-project {
+    @apply bg-ok-bg text-ok;
+  }
+
+  .badge-info {
+    @apply bg-info-bg text-info;
+  }
+
+  .badge-warning {
+    @apply bg-warning-bg text-warning;
+  }
+
+  .badge-error,
+  .badge-conflict {
+    @apply bg-error-bg text-error;
+  }
+
+  .badge-ok {
+    @apply bg-ok-bg text-ok;
+  }
+
+  .badge-duplicate {
+    @apply bg-warning-bg text-warning;
+  }
+
+  .badge-disabled,
+  .badge-neutral {
+    @apply bg-neutral-bg text-neutral;
+  }
+
+  .chip,
+  .chip-toggle {
+    @apply inline-flex items-center gap-1 rounded-full border border-border bg-surface-muted px-3 py-[0.15rem] text-[0.8rem] text-fg;
+  }
+
+  .chip-toggle {
+    @apply cursor-pointer transition-colors;
+  }
+
+  .chip-toggle[aria-pressed='true'] {
+    @apply border-primary bg-primary font-semibold text-primary-fg;
+  }
+
+  .chip-list,
+  .chip-toggle-list {
+    @apply m-0 my-2 flex list-none flex-wrap gap-2 p-0;
+  }
+
+  .chip-list.inline {
+    @apply m-0 gap-1;
+  }
+
+  .chip-quiet {
+    @apply border-dashed bg-transparent text-fg-muted;
+  }
+
+  .chip-button {
+    @apply cursor-pointer font-sans text-[0.8rem];
+  }
+
+  .chip-button:hover {
+    @apply border-solid text-fg;
+  }
+
+  /* ----- Notices ----- */
+
+  .notice {
+    @apply my-3 rounded-xl border border-transparent px-4 py-3;
+  }
+
+  .notice-info {
+    @apply border-info bg-info-bg text-info;
+  }
+
+  .notice-ok {
+    @apply border-ok bg-ok-bg text-ok;
+  }
+
+  .notice-warning {
+    @apply border-warning bg-warning-bg text-warning;
+  }
+
+  .notice-error {
+    @apply border-error bg-error-bg text-error;
+  }
+
+  .notice-actions {
+    @apply mt-2 flex gap-2;
+  }
+
+  /* ----- Overview ----- */
+
+  .stat-grid {
+    @apply mb-2 grid gap-3;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  }
+
+  .stat-card {
+    @apply rounded-2xl border border-border bg-surface p-4 shadow-card-sm transition-shadow;
+  }
+
+  .stat-card-value {
+    @apply m-0 text-[2rem] font-bold tracking-tight;
+  }
+
+  .stat-card-label {
+    @apply m-0 text-sm text-fg-muted;
+  }
+
+  .stat-card-hint {
+    @apply mb-0 mt-1 text-[0.78rem] text-fg-muted;
+  }
+
+  /* Linked cards keep the card's own look rather than the default link look. */
+  a.stat-card-link {
+    @apply block text-inherit no-underline;
+  }
+
+  a.stat-card-link:hover,
+  a.stat-card-link:focus-visible {
+    @apply border-primary shadow-card-md;
+  }
+
+  a.stat-card-link:focus-visible {
+    @apply rounded-2xl;
+  }
+
+  a.stat-card-link:hover .stat-card-label,
+  a.stat-card-link:focus-visible .stat-card-label {
+    @apply text-fg underline;
+  }
+
+  .stat-card-error {
+    @apply border-error;
+  }
+
+  .stat-card-error .stat-card-value {
+    @apply text-error;
+  }
+
+  .stat-card-warning {
+    @apply border-warning;
+  }
+
+  .stat-card-warning .stat-card-value {
+    @apply text-warning;
+  }
+
+  .findings-list,
+  .root-list {
+    @apply m-0 flex list-none flex-col gap-2 p-0;
+  }
+
+  .finding-row {
+    @apply grid items-start gap-3 rounded-lg border border-border border-l-4 border-l-border-strong bg-surface px-4 py-3;
+    grid-template-columns: 6rem minmax(0, 1fr);
+  }
+
+  .finding-error {
+    @apply border-l-error;
+  }
+
+  .finding-warning {
+    @apply border-l-warning;
+  }
+
+  .finding-info {
+    @apply border-l-info;
+  }
+
+  .finding-badge {
+    @apply inline-flex min-h-0 w-auto max-w-none min-w-0 items-center justify-center rounded-full px-[0.6rem] py-1 text-xs font-bold lowercase tracking-wide;
+  }
+
+  .finding-badge > span:first-child {
+    @apply text-sm leading-none;
+  }
+
+  .finding-body {
+    @apply min-w-0 flex-1;
+  }
+
+  .finding-title {
+    @apply m-0 text-base font-bold leading-snug;
+  }
+
+  .finding-detail {
+    @apply my-1 text-sm leading-snug;
+  }
+
+  .finding-remediation {
+    @apply my-1 text-[0.85rem] leading-snug text-fg-muted;
+  }
+
+  .finding-files {
+    @apply m-0 mt-1 flex list-none flex-col gap-1 p-0 text-[0.85rem];
+  }
+
+  .root-list li {
+    @apply flex flex-wrap items-center gap-3 rounded-lg border border-border bg-surface px-3 py-2;
+  }
+
+  .root-path {
+    @apply flex-1 break-words font-mono text-sm;
+  }
+
+  .root-form-row {
+    @apply mt-1 flex gap-2;
+  }
+
+  .root-form-row input {
+    @apply flex-1;
+  }
+
+  /* ----- Files view ----- */
+
+  .files-layout {
+    @apply grid items-stretch gap-5;
+    grid-template-columns: minmax(220px, 300px) 1fr;
+    grid-template-rows: minmax(0, 1fr);
+    height: calc(100vh - 220px);
+  }
+
+  .file-tree {
+    @apply min-h-0 overflow-y-auto rounded-2xl border border-border bg-surface p-3;
+  }
+
+  .file-tree-provider {
+    @apply mb-3;
+  }
+
+  .file-tree-provider h3 {
+    @apply mb-1 mt-0 text-sm;
+  }
+
+  .file-tree-scope h4 {
+    @apply mb-1 mt-2;
+  }
+
+  .file-tree-scope ul {
+    @apply m-0 list-none p-0;
+  }
+
+  .file-tree-link {
+    @apply flex justify-between gap-2 rounded-md px-2 py-1 text-sm text-fg no-underline transition-colors;
+  }
+
+  .file-tree-link:hover {
+    @apply bg-surface-muted;
+  }
+
+  .file-tree-link.active {
+    @apply bg-primary font-semibold text-primary-fg;
+  }
+
+  .file-tree-name {
+    @apply break-words;
+  }
+
+  .file-tree-kind {
+    @apply shrink-0 text-xs;
+  }
+
+  .file-tree-link.active .file-tree-kind {
+    @apply text-primary-fg;
+  }
+
+  .file-detail {
+    @apply flex h-full min-w-0 flex-col;
+  }
+
+  .file-detail-panel {
+    @apply flex min-h-0 flex-1 flex-col rounded-2xl border border-border bg-surface p-4;
+  }
+
+  .file-detail-code {
+    @apply flex min-h-0 flex-1 overflow-hidden rounded-lg;
+  }
+
+  .file-detail-code > [role='group'] {
+    @apply flex min-h-0 min-w-0 flex-1 flex-col;
+  }
+
+  .file-detail-code > [role='group'] > div {
+    @apply min-h-0 flex-1;
+  }
+
+  .file-detail-header {
+    @apply flex flex-wrap items-start justify-between gap-3;
+  }
+
+  .file-detail-badges {
+    @apply flex flex-wrap items-center gap-2;
+  }
+
+  .file-path {
+    @apply break-words font-mono text-[0.85rem];
+  }
+
+  .file-detail-actions {
+    @apply my-3 flex items-center gap-2;
+  }
+
+  .file-detail-actions .icon-button {
+    @apply min-w-16 min-h-[2.625rem] px-4 py-2;
+  }
+
+  .redaction-panel {
+    @apply my-3 rounded-lg bg-surface-muted p-3;
+  }
+
+  .revealed-value {
+    @apply rounded-sm bg-warning-bg px-2 py-[0.1rem] text-warning;
+  }
+
+  .save-confirm {
+    @apply mt-4 rounded-2xl border border-border-strong bg-surface-muted p-4;
+  }
+
+  .save-confirm-actions {
+    @apply mt-3 flex gap-2;
+  }
+
+  .diff-view {
+    @apply max-h-[40vh] overflow-auto whitespace-pre-wrap rounded-lg border border-border bg-surface px-3 py-2;
+  }
+
+  .diff-line {
+    @apply px-1;
+  }
+
+  .diff-add {
+    @apply bg-ok-bg text-ok;
+  }
+
+  .diff-remove {
+    @apply bg-error-bg text-error;
+  }
+
+  /* ----- MCP view ----- */
+
+  .mcp-table {
+    @apply overflow-hidden rounded-2xl border border-border bg-surface;
+  }
+
+  .mcp-row-conflict {
+    @apply bg-error-bg;
+  }
+
+  .mcp-target {
+    @apply break-words font-mono text-[0.85rem];
+  }
+
+  .mcp-definitions-table {
+    @apply rounded-lg bg-surface-muted;
+  }
+
+  .tree-toggle {
+    @apply border-none bg-transparent p-1 text-base leading-none;
+  }
+
+  /*
+   * Overlap groups are an inference, not a fact read off disk, so they are
+   * set apart from the table and carry a left rule keyed to confidence — the
+   * same visual grammar the findings list uses for severity.
+   */
+  .mcp-overlaps {
+    @apply mb-4;
+  }
+
+  .overlap-list {
+    @apply m-0 flex list-none flex-col gap-3 p-0;
+  }
+
+  .overlap-card {
+    @apply rounded-lg border border-border border-l-4 border-l-border-strong bg-surface p-3;
+  }
+
+  .overlap-high {
+    @apply border-l-warning;
+  }
+
+  .overlap-medium {
+    @apply border-l-info;
+  }
+
+  .overlap-low {
+    @apply border-l-border-strong;
+  }
+
+  .overlap-head {
+    @apply flex flex-wrap items-center gap-2;
+  }
+
+  .overlap-head h4 {
+    @apply m-0 text-base;
+  }
+
+  .overlap-detail {
+    @apply my-2;
+  }
+
+  .overlap-members {
+    @apply rounded-lg bg-surface-muted;
+  }
+
+  .plain-list {
+    @apply m-0 list-none p-0;
+  }
+
+  /*
+   * Deleting a server rewrites a file the user did not open, so the affected
+   * paths are listed in full and the row is tinted to match the other
+   * destructive surfaces rather than blending into the table.
+   */
+  .mcp-remove-row > td {
+    @apply bg-error-bg;
+  }
+
+  .mcp-remove-confirm h4 {
+    @apply mb-2 mt-0 text-base;
+  }
+
+  .mcp-remove-confirm .plain-list li {
+    @apply flex flex-wrap items-center gap-2 py-1;
+  }
+
+  button.danger {
+    @apply border-error text-error;
+  }
+
+  button.danger:hover:not(:disabled):not([aria-disabled='true']) {
+    @apply border-error bg-error-bg;
+  }
+
+  /*
+   * A delete trigger sits inside a row of names and badges, so it is square
+   * and quiet until hovered. The glyph alone would be unlabelled, so every
+   * instance carries a visually hidden name naming the entry it removes.
+   */
+  button.icon-button {
+    @apply px-2 py-1 leading-none;
+  }
+
+  /*
+   * Confirming a delete is the last chance to notice the wrong row was
+   * clicked, so it is tinted like the other destructive surfaces and states
+   * the full path.
+   */
+  .delete-confirm {
+    @apply mt-3 rounded-xl border border-error bg-error-bg p-3;
+  }
+
+  .delete-confirm h4 {
+    @apply mb-2 mt-0 text-base;
+  }
+
+  .delete-confirm p {
+    @apply mb-3 mt-0;
+  }
+
+  .delete-confirm-actions {
+    @apply flex flex-wrap gap-2;
+  }
+
+  /* ----- Instructions view ----- */
+
+  .view-instructions section {
+    @apply mb-6;
+  }
+
+  .instruction-list {
+    @apply m-0 flex list-none flex-col gap-2 p-0;
+  }
+
+  .instruction-row {
+    @apply rounded-lg border border-border bg-surface p-3;
+  }
+
+  .instruction-row-header {
+    @apply flex flex-wrap items-center gap-2;
+  }
+
+  .instruction-title {
+    @apply font-semibold;
+  }
+
+  .instruction-description {
+    @apply my-1;
+  }
+
+  .capability-groups {
+    @apply flex flex-col gap-4;
+  }
+
+  .capability-list {
+    @apply m-0 grid list-none gap-2 p-0;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  }
+
+  .capability-card {
+    @apply rounded-lg border border-border bg-surface p-3;
+  }
+
+  .capability-card-header {
+    @apply mb-1 flex flex-wrap items-center gap-2;
+  }
+
+  .guardrail-list {
+    @apply m-0 flex list-none flex-col gap-3 p-0;
+  }
+
+  .guardrail-card {
+    @apply rounded-lg border border-border bg-surface p-3;
+  }
+
+  .guardrail-card-header {
+    @apply mb-2 flex flex-wrap items-center gap-2;
+  }
+
+  .guardrail-rules {
+    @apply grid gap-3;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  }
+
+  .rule-list h4,
+  .rule-list h5 {
+    @apply mt-0 text-[0.85rem];
+  }
+
+  .rule-list ul {
+    @apply m-0 flex list-none flex-col gap-1 p-0;
+  }
+
+  .rule-list-ok h4,
+  .rule-list-ok h5 {
+    @apply text-ok;
+  }
+
+  .rule-list-error h4,
+  .rule-list-error h5 {
+    @apply text-error;
+  }
+
+  .rule-list-warning h4,
+  .rule-list-warning h5 {
+    @apply text-warning;
+  }
+
+  /* ----- Search view ----- */
+
+  .search-box {
+    @apply mb-3 flex max-w-[480px] flex-col gap-1;
+  }
+
+  .search-box input {
+    @apply text-base;
+  }
+
+  .search-result-list {
+    @apply m-0 flex list-none flex-col gap-4 p-0;
+  }
+
+  .search-result-file h3 {
+    @apply mb-2 mt-0 flex items-center gap-2;
+  }
+
+  .search-hit-list {
+    @apply m-0 flex list-none flex-col gap-1 p-0;
+  }
+
+  .search-hit-list a {
+    @apply flex items-baseline gap-2 rounded-md px-2 py-1 no-underline;
+  }
+
+  .search-hit-list a:hover {
+    @apply bg-surface-muted;
+  }
+
+  .search-hit-line {
+    @apply min-w-[4.5rem] shrink-0 text-xs text-fg-muted;
+  }
+
+  .search-hit-text {
+    @apply break-words;
+  }
+
+  /* Uses the themed info pair rather than the UA default yellow, which is
+     unreadable against the dark theme's light-on-dark text. */
+  .search-hit-text mark {
+    @apply rounded-[2px] bg-info-bg px-px font-semibold text-info;
+  }
+
+  /* ----- Export view ----- */
+
+  .export-actions {
+    @apply mb-3 flex gap-3;
+  }
+
+  .markdown-preview {
+    @apply max-h-[50vh] overflow-auto whitespace-pre-wrap rounded-lg border border-border bg-surface p-3;
+  }
+
+  /* ----- Provenance, filters, and the Sources view ----- */
+
+  .toolbar {
+    @apply mb-4 flex flex-wrap items-center gap-2 rounded-lg border border-border bg-surface p-3;
+  }
+
+  .toolbar label {
+    @apply text-[0.85rem] text-fg-muted;
+  }
+
+  .toolbar input[type='search'],
+  .toolbar input[type='text'] {
+    @apply min-w-[18rem] flex-[1_1_18rem];
+  }
+
+  .toolbar-check {
+    @apply inline-flex items-center gap-1 text-fg;
+  }
+
+  .provenance {
+    @apply my-1 flex flex-wrap items-center gap-2 text-[0.85rem];
+  }
+
+  .provenance-directory code,
+  .file-directory code,
+  .mcp-directory code,
+  .source-directory code,
+  .source-directories code {
+    @apply break-words rounded-sm border border-border bg-surface-muted px-2 py-[0.05rem] font-mono text-xs;
+  }
+
+  .provenance-file {
+    @apply font-mono text-xs;
+  }
+
+  .duplicate-siblings {
+    @apply mt-1;
+  }
+
+  /* A left rule is enough to group conflicting rows visually without
+     repainting the whole card, which would fight the badge that already
+     says "conflict". */
+  .is-conflict {
+    @apply border-l-[3px] border-l-error;
+  }
+
+  .mcp-directories ul,
+  .source-directory ul,
+  .source-files {
+    @apply m-0 flex list-none flex-col gap-1 p-0;
+  }
+
+  .source-list {
+    @apply m-0 flex list-none flex-col gap-4 p-0;
+  }
+
+  .source-card {
+    @apply rounded-2xl border border-border bg-surface p-4;
+  }
+
+  .source-card-header {
+    @apply flex flex-wrap items-center gap-2;
+  }
+
+  .source-card-header h3 {
+    @apply m-0;
+  }
+
+  .source-directories {
+    @apply flex flex-wrap items-center gap-2 text-[0.85rem];
+  }
+
+  .source-directories .label {
+    @apply text-fg-muted;
+  }
+
+  .source-table {
+    @apply mt-3 w-full;
+  }
+
+  .source-table th,
+  .source-table td {
+    @apply align-top;
+  }
+
+  .source-table .note {
+    @apply block;
+  }
+
+  /* Absent locations stay legible rather than being greyed into
+     unreadability: they are often exactly what the user came here to find. */
+  .source-row-absent {
+    @apply bg-surface-muted;
+  }
+
+  /* ----- Skills & agents view ----- */
+
+  .capability-layout {
+    @apply grid items-start gap-5;
+    grid-template-columns: minmax(240px, 320px) 1fr;
+  }
+
+  .capability-sidebar {
+    @apply sticky top-3 max-h-[calc(100vh-8rem)] min-w-0 overflow-y-auto rounded-2xl border border-border bg-surface p-3;
+  }
+
+  /* The sidebar is too narrow for the row layout the toolbar uses elsewhere,
+     so its controls stack instead of being squeezed onto one line. */
+  .toolbar-stacked {
+    @apply mb-2 flex-col items-stretch;
+  }
+
+  /* The shared toolbar rule grows its search field along the main axis. Once
+     that axis is vertical the field grows in height, so the growth is reset. */
+  .toolbar-stacked input[type='search'],
+  .toolbar-stacked input[type='text'],
+  .toolbar-stacked select {
+    @apply w-full min-w-0 flex-none;
+  }
+
+  .capability-nav section {
+    @apply mb-3;
+  }
+
+  .capability-nav h3 {
+    @apply mb-1 mt-0 text-sm;
+  }
+
+  .capability-nav-list {
+    @apply m-0 list-none p-0;
+  }
+
+  .capability-nav-list a {
+    @apply flex flex-col gap-0.5 break-words rounded-md px-2 py-1 text-sm text-fg no-underline;
+  }
+
+  .capability-nav-list a:hover {
+    @apply bg-surface-muted;
+  }
+
+  .capability-nav-list a.is-selected {
+    @apply bg-primary text-primary-fg;
+  }
+
+  .capability-nav-list a.is-selected .muted {
+    @apply text-primary-fg;
+  }
+
+  .capability-nav-name {
+    @apply font-semibold;
+  }
+
+  /* Shortcuts for adding a tool the harness already uses somewhere else. */
+  .capability-suggestions {
+    @apply mt-2;
+  }
+
+  .capability-suggestions .chip-list {
+    @apply my-1 gap-1;
+  }
+
+  .capability-detail {
+    @apply min-w-0 rounded-2xl border border-border bg-surface p-4;
+  }
+
+  .capability-facts {
+    @apply my-3 grid gap-3;
+    grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  }
+
+  .capability-facts dt {
+    @apply text-xs uppercase tracking-wide text-fg-muted;
+  }
+
+  .capability-facts dd {
+    @apply mt-1 break-words;
+  }
+
+  .capability-fieldset {
+    @apply m-0 mb-4 rounded-lg border border-border p-3;
+  }
+
+  .capability-fieldset legend {
+    @apply px-1 font-semibold;
+  }
+
+  .field {
+    @apply mb-3 min-w-0;
+  }
+
+  .field label {
+    @apply mb-1 block font-semibold;
+  }
+
+  .field input[type='text'],
+  .field textarea {
+    @apply w-full rounded-sm border border-border bg-canvas px-2 py-2 font-sans text-fg;
+  }
+
+  .field textarea {
+    @apply resize-y;
+  }
+
+  .field p {
+    @apply mt-1;
+  }
+
+  .field-row {
+    @apply grid gap-3;
+    grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  }
+
+  .capability-preview {
+    @apply mt-4;
+  }
+
+  .capability-raw-link {
+    @apply text-sm;
+  }
+
+  .capability-change-table {
+    @apply mb-3 w-full border-collapse;
+  }
+
+  .capability-change-table caption {
+    @apply pb-1 text-left font-semibold;
+  }
+
+  .capability-change-table th,
+  .capability-change-table td {
+    @apply break-words border-b border-border px-2 py-1 text-left align-top;
+  }
+}
+
+@layer utilities {
+  .table-scroll {
+    @apply max-w-full overflow-x-auto;
+    overscroll-behavior-inline: contain;
+  }
+
+  .table-scroll > table {
+    @apply min-w-full;
+  }
 }
 
 @media (max-width: 860px) {
@@ -1377,365 +1277,6 @@ button.icon-button {
     flex: none;
     min-height: 50vh;
   }
-}
-
-/* ----- Provenance, filters, and the Sources view ----- */
-
-/*
- * A quiet chip for the secondary half of a provenance line (the location
- * label). The primary chip already carries the tool name; giving both the same
- * weight made the line read as two competing labels.
- */
-.chip-quiet {
-  background: transparent;
-  color: var(--color-text-muted);
-  border-style: dashed;
-}
-
-.toolbar {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  flex-wrap: wrap;
-  margin-bottom: var(--space-4);
-  padding: var(--space-3);
-  background: var(--color-bg-raised);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-}
-
-.toolbar label {
-  font-size: 0.85rem;
-  color: var(--color-text-muted);
-}
-
-.toolbar input[type='search'],
-.toolbar input[type='text'] {
-  min-width: 18rem;
-  flex: 1 1 18rem;
-}
-
-.toolbar-check {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  color: var(--color-text);
-}
-
-.provenance {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  flex-wrap: wrap;
-  margin: var(--space-1) 0;
-  font-size: 0.85rem;
-}
-
-.provenance-directory code,
-.file-directory code,
-.mcp-directory code,
-.source-directory code,
-.source-directories code {
-  font-family: var(--font-mono);
-  font-size: 0.8rem;
-  background: var(--color-bg-sunken);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  padding: 0.05rem var(--space-2);
-  overflow-wrap: break-word;
-}
-
-.provenance-file {
-  font-family: var(--font-mono);
-  font-size: 0.8rem;
-}
-
-.duplicate-siblings {
-  margin-top: var(--space-1);
-}
-
-/* A left rule is enough to group conflicting rows visually without repainting
-   the whole card, which would fight the badge that already says "conflict". */
-.is-conflict {
-  border-left: 3px solid var(--color-error);
-}
-
-.mcp-directories ul,
-.source-directory ul,
-.source-files {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-}
-
-.source-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-}
-
-.source-card {
-  background: var(--color-bg-raised);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  padding: var(--space-4);
-}
-
-.source-card-header {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  flex-wrap: wrap;
-}
-
-.source-card-header h3 {
-  margin: 0;
-}
-
-.source-directories {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  flex-wrap: wrap;
-  font-size: 0.85rem;
-}
-
-.source-directories .label {
-  color: var(--color-text-muted);
-}
-
-.source-table {
-  width: 100%;
-  margin-top: var(--space-3);
-}
-
-.source-table th,
-.source-table td {
-  vertical-align: top;
-}
-
-.source-table .note {
-  display: block;
-}
-
-/* Absent locations stay legible rather than being greyed into unreadability:
-   they are often exactly what the user came here to find. */
-.source-row-absent {
-  background: var(--color-bg-sunken);
-}
-
-/* ----- Skills & agents view ----- */
-
-.capability-layout {
-  display: grid;
-  grid-template-columns: minmax(240px, 320px) 1fr;
-  gap: var(--space-5);
-  align-items: start;
-}
-
-.capability-sidebar {
-  background: var(--color-bg-raised);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  padding: var(--space-3);
-  max-height: calc(100vh - 8rem);
-  overflow-y: auto;
-  position: sticky;
-  top: var(--space-3);
-  min-width: 0;
-}
-
-/* The sidebar is too narrow for the row layout the toolbar uses elsewhere, so
-   its controls stack instead of being squeezed onto one line. */
-.toolbar-stacked {
-  flex-direction: column;
-  align-items: stretch;
-  margin-bottom: var(--space-2);
-}
-
-/* The shared toolbar rule grows its search field along the main axis. Once
-   that axis is vertical the field grows in height, so the growth is reset. */
-.toolbar-stacked input[type='search'],
-.toolbar-stacked input[type='text'],
-.toolbar-stacked select {
-  flex: 0 0 auto;
-  min-width: 0;
-  width: 100%;
-}
-
-.capability-nav section {
-  margin-bottom: var(--space-3);
-}
-
-.capability-nav h3 {
-  margin: 0 0 var(--space-1);
-  font-size: 0.95rem;
-}
-
-.capability-nav-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.capability-nav-list a {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  text-decoration: none;
-  color: var(--color-text);
-  padding: var(--space-1) var(--space-2);
-  border-radius: var(--radius-sm);
-  font-size: 0.9rem;
-  overflow-wrap: break-word;
-}
-
-.capability-nav-list a:hover {
-  background: var(--color-bg-sunken);
-}
-
-.capability-nav-list a.is-selected {
-  background: var(--color-accent);
-  color: var(--color-bg-raised);
-}
-
-.capability-nav-list a.is-selected .muted {
-  color: var(--color-bg-raised);
-}
-
-.capability-nav-name {
-  font-weight: 600;
-}
-
-/* Shortcuts for adding a tool the harness already uses somewhere else. */
-.capability-suggestions {
-  margin-top: var(--space-2);
-}
-
-.capability-suggestions .chip-list {
-  margin: var(--space-1) 0 0;
-  gap: var(--space-1);
-}
-
-.chip-button {
-  cursor: pointer;
-  font: inherit;
-  font-size: 0.8rem;
-}
-
-.chip-button:hover {
-  color: var(--color-text);
-  border-style: solid;
-}
-
-.capability-detail {
-  min-width: 0;
-  background: var(--color-bg-raised);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  padding: var(--space-4);
-}
-
-.capability-facts {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
-  gap: var(--space-3);
-  margin: var(--space-3) 0;
-}
-
-.capability-facts dt {
-  font-size: 0.8rem;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-  color: var(--color-text-muted);
-}
-
-.capability-facts dd {
-  margin: var(--space-1) 0 0;
-  overflow-wrap: break-word;
-}
-
-.capability-fieldset {
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  padding: var(--space-3);
-  margin: 0 0 var(--space-4);
-}
-
-.capability-fieldset legend {
-  font-weight: 600;
-  padding: 0 var(--space-1);
-}
-
-.field {
-  margin-bottom: var(--space-3);
-  min-width: 0;
-}
-
-.field label {
-  display: block;
-  font-weight: 600;
-  margin-bottom: var(--space-1);
-}
-
-.field input[type='text'],
-.field textarea {
-  width: 100%;
-  font: inherit;
-  padding: var(--space-2);
-  color: var(--color-text);
-  background: var(--color-bg);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-}
-
-.field textarea {
-  resize: vertical;
-}
-
-.field p {
-  margin: var(--space-1) 0 0;
-}
-
-.field-row {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
-  gap: var(--space-3);
-}
-
-.capability-preview {
-  margin-top: var(--space-4);
-}
-
-.capability-raw-link {
-  font-size: 0.9rem;
-}
-
-.capability-change-table {
-  border-collapse: collapse;
-  width: 100%;
-  margin-bottom: var(--space-3);
-}
-
-.capability-change-table caption {
-  text-align: left;
-  font-weight: 600;
-  padding-bottom: var(--space-1);
-}
-
-.capability-change-table th,
-.capability-change-table td {
-  text-align: left;
-  vertical-align: top;
-  padding: var(--space-1) var(--space-2);
-  border-bottom: 1px solid var(--color-border);
-  overflow-wrap: break-word;
 }
 
 @media (max-width: 900px) {
