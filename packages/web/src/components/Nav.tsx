@@ -11,6 +11,8 @@ const LINKS: Array<{ path: string; label: string }> = [
   { path: '/export', label: 'Export' },
 ];
 
+const PROJECT_ROOTS_PATH = '/project-roots';
+
 export function Nav({ currentBase }: { currentBase: string }): ReactElement {
   return (
     <nav aria-label="Main">
@@ -25,6 +27,15 @@ export function Nav({ currentBase }: { currentBase: string }): ReactElement {
             </li>
           );
         })}
+        <li>
+          <a
+            href={`#${PROJECT_ROOTS_PATH}`}
+            className="nav-link-highlight"
+            aria-current={currentBase === PROJECT_ROOTS_PATH ? 'page' : undefined}
+          >
+            <span aria-hidden="true">＋</span> Project Roots
+          </a>
+        </li>
       </ul>
     </nav>
   );

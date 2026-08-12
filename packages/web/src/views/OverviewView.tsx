@@ -1,11 +1,10 @@
 /**
- * Dashboard: summary stats, detected tools, health findings, rescan, and
- * project-root management.
+ * Dashboard: summary stats, detected tools, health findings, and rescan.
  */
 
 import { useCallback, useEffect, useState } from 'react';
-import type { FormEvent, ReactElement } from 'react';
-import { addProject, getOverview, postScan, removeProject } from '../api/client.js';
+import type { ReactElement } from 'react';
+import { getOverview, postScan } from '../api/client.js';
 import { Badge } from '../components/Badge.js';
 import { StatCard } from '../components/StatCard.js';
 import { EmptyState, ErrorState, LoadingState } from '../components/StatusStates.js';
@@ -24,12 +23,6 @@ const SEVERITY_LABELS: Record<FindingSeverity, string> = {
   info: 'Info',
 };
 const SEVERITIES: readonly FindingSeverity[] = ['error', 'warning', 'info'];
-
-/** Outcome of the last project-root change, so a success is visible too. */
-interface RootFeedback {
-  tone: 'ok' | 'error';
-  text: string;
-}
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -50,10 +43,6 @@ export function OverviewView(): ReactElement {
   const [scanning, setScanning] = useState(false);
   const [announcement, setAnnouncement] = useState('');
   const [severityFilter, setSeverityFilter] = useState<Set<FindingSeverity>>(new Set());
-  const [newRoot, setNewRoot] = useState('');
-  const [rootBusy, setRootBusy] = useState<string | undefined>(undefined);
-  const [rootFeedback, setRootFeedback] = useState<RootFeedback | undefined>(undefined);
-  const [pendingRemoval, setPendingRemoval] = useState<string | undefined>(undefined);
 
   const load = useCallback(async (): Promise<OverviewResponse | undefined> => {
     setLoading(true);
@@ -95,48 +84,6 @@ export function OverviewView(): ReactElement {
       setAnnouncement('Rescan failed.');
     } finally {
       setScanning(false);
-    }
-  };
-
-  const handleAddRoot = async (event: FormEvent): Promise<void> => {
-    event.preventDefault();
-    const path = newRoot.trim();
-    if (path.length === 0) return;
-    setRootBusy(path);
-    setRootFeedback(undefined);
-    try {
-      await addProject(path);
-      setNewRoot('');
-      const next = await load();
-      const added = next?.projectRoots.find((root) => root.path === path);
-      setRootFeedback({
-        tone: 'ok',
-        text: added
-          ? `Added ${added.path} — ${plural(added.fileCount, 'file')} found.`
-          : `Added ${path}.`,
-      });
-    } catch (caught) {
-      setRootFeedback({ tone: 'error', text: describeError(caught) });
-    } finally {
-      setRootBusy(undefined);
-    }
-  };
-
-  const handleRemoveRoot = async (path: string): Promise<void> => {
-    setRootBusy(path);
-    setRootFeedback(undefined);
-    try {
-      await removeProject(path);
-      setPendingRemoval(undefined);
-      await load();
-      setRootFeedback({
-        tone: 'ok',
-        text: `Removed ${path}. Nothing on disk changed — add the path again to restore it.`,
-      });
-    } catch (caught) {
-      setRootFeedback({ tone: 'error', text: describeError(caught) });
-    } finally {
-      setRootBusy(undefined);
     }
   };
 
@@ -272,7 +219,7 @@ export function OverviewView(): ReactElement {
         {data.detectedProviders.length === 0 ? (
           <EmptyState
             title="No agentic AI tool configuration was found on this machine."
-            detail="Install a supported tool, or add a project root below and rescan."
+            detail="Install a supported tool, or add a project root and rescan."
           />
         ) : (
           <ul className="chip-list">
@@ -355,84 +302,6 @@ export function OverviewView(): ReactElement {
             )}
           </>
         )}
-      </section>
-
-      <section aria-labelledby="project-roots-heading">
-        <h3 id="project-roots-heading">Project roots</h3>
-        <p className="muted">
-          Add a repository folder to also scan its project-scoped configuration (e.g. `.vscode`,
-          `.cursor`, `AGENTS.md`).
-        </p>
-        {data.projectRoots.length === 0 ? (
-          <p className="muted">No project roots configured yet.</p>
-        ) : (
-          <ul className="root-list">
-            {data.projectRoots.map((root) => (
-              <li key={root.path}>
-                <span className="root-path">{root.path}</span>
-                <span className="muted">{plural(root.fileCount, 'file')}</span>
-                {/*
-                 * Two-step rather than `confirm()`: removing a root discards a
-                 * path the user typed by hand, and an inline confirmation stays
-                 * keyboard-operable and readable by a screen reader.
-                 */}
-                {pendingRemoval === root.path ? (
-                  <>
-                    <span className="muted small">Stop scanning this folder?</span>
-                    <button
-                      type="button"
-                      onClick={() => void handleRemoveRoot(root.path)}
-                      disabled={rootBusy === root.path}
-                    >
-                      {rootBusy === root.path ? 'Removing…' : 'Confirm'}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setPendingRemoval(undefined)}
-                      disabled={rootBusy === root.path}
-                    >
-                      Cancel
-                    </button>
-                  </>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => setPendingRemoval(root.path)}
-                    disabled={rootBusy !== undefined}
-                    aria-label={`Remove project root ${root.path}`}
-                  >
-                    Remove
-                  </button>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
-        <form className="root-form" onSubmit={(event) => void handleAddRoot(event)}>
-          <label htmlFor="new-root-path">Add project root</label>
-          <div className="root-form-row">
-            <input
-              id="new-root-path"
-              type="text"
-              placeholder="C:\repos\my-project"
-              value={newRoot}
-              onChange={(event) => setNewRoot(event.target.value)}
-            />
-            <button type="submit" disabled={newRoot.trim().length === 0 || rootBusy !== undefined}>
-              {rootBusy === newRoot.trim() ? 'Adding…' : 'Add'}
-            </button>
-          </div>
-        </form>
-        {rootFeedback?.tone === 'error' ? (
-          <p role="alert" className="state-error-inline">
-            {rootFeedback.text}
-          </p>
-        ) : null}
-        {rootFeedback?.tone === 'ok' ? (
-          <p role="status" aria-live="polite" className="muted">
-            {rootFeedback.text}
-          </p>
-        ) : null}
       </section>
     </div>
   );

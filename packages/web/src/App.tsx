@@ -16,6 +16,10 @@ const SourcesView = lazy(async () => {
   const module = await import('./views/SourcesView.js');
   return { default: module.SourcesView };
 });
+const ProjectRootsView = lazy(async () => {
+  const module = await import('./views/ProjectRootsView.js');
+  return { default: module.ProjectRootsView };
+});
 const FilesView = lazy(async () => {
   const module = await import('./views/FilesView.js');
   return { default: module.FilesView };
@@ -50,6 +54,7 @@ const KNOWN_BASES = [
   '/instructions',
   '/search',
   '/export',
+  '/project-roots',
 ];
 
 export function App(): ReactElement {
@@ -90,6 +95,7 @@ export function App(): ReactElement {
               <SearchView initialQuery={location.params.get('q') ?? ''} />
             ) : null}
             {base === '/export' ? <ExportView /> : null}
+            {base === '/project-roots' ? <ProjectRootsView /> : null}
             {base === '/' ? <OverviewView /> : null}
             {!KNOWN_BASES.includes(base) ? <NotFound /> : null}
           </Suspense>

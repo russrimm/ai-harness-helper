@@ -345,6 +345,18 @@
     @apply bg-primary text-primary-fg font-semibold;
   }
 
+  .nav-link-highlight {
+    @apply border border-primary font-semibold text-primary;
+  }
+
+  .nav-link-highlight:hover {
+    @apply bg-primary/10;
+  }
+
+  .nav-list a[aria-current='page'].nav-link-highlight {
+    @apply bg-primary text-primary-fg;
+  }
+
   main {
     @apply mx-auto w-full max-w-[1280px] flex-1 p-5;
   }
