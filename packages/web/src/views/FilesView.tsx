@@ -449,14 +449,17 @@ function FileDetailPanel({
             />
           ) : null}
 
-          <CodeEditor
-            value={editing ? editContent : doc.content}
-            language={doc.language}
-            readOnly={!editing}
-            theme={theme}
-            onChange={editing ? onEditContentChange : undefined}
-            ariaLabel={`${file.name} contents, ${editing ? 'editable' : 'read-only'}`}
-          />
+          <div className="file-detail-code">
+            <CodeEditor
+              value={editing ? editContent : doc.content}
+              language={doc.language}
+              readOnly={!editing}
+              theme={theme}
+              onChange={editing ? onEditContentChange : undefined}
+              ariaLabel={`${file.name} contents, ${editing ? 'editable' : 'read-only'}`}
+              height="100%"
+            />
+          </div>
         </>
       )}
     </div>
