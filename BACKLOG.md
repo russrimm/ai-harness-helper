@@ -80,7 +80,7 @@ audit`, and the test suite across Windows, macOS, and Linux, plus the declared
 minimum Node version. Actions are SHA-pinned, permissions are read-only, and
 every job has a timeout. The baseline workflow is retained.
 
-## P0 - Decisions still required
+## P0 - Decisions required before implementation
 
 ### P0.4 Decide distribution and licensing
 

@@ -1,5 +1,8 @@
 # AI Harness Helper
 
+This discovery-stage repository contains the AI Harness Helper, a local tool for
+making agentic coding-tool configuration visible and manageable.
+
 Your agentic coding tools scatter their configuration across a dozen unrelated
 places: `%APPDATA%`, `~/.claude`, `~/.codex`, `~/.cursor`, `~/.copilot`,
 `~/.codeium`, `~/.docker/mcp`, `.github/`, `.vscode/`, plus stray `mcp.json`,
