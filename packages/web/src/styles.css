@@ -713,7 +713,7 @@ a.stat-card-link:focus-visible .stat-card-label {
   flex: 1;
   font-family: var(--font-mono);
   font-size: 0.9rem;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
 }
 
 .root-form-row {
@@ -787,7 +787,7 @@ a.stat-card-link:focus-visible .stat-card-label {
 }
 
 .file-tree-name {
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
 }
 
 .file-tree-kind {
@@ -828,7 +828,7 @@ a.stat-card-link:focus-visible .stat-card-label {
 .file-path {
   font-family: var(--font-mono);
   font-size: 0.85rem;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
 }
 
 .file-detail-actions {
@@ -906,7 +906,7 @@ a.stat-card-link:focus-visible .stat-card-label {
 .mcp-target {
   font-family: var(--font-mono);
   font-size: 0.85rem;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
 }
 
 .mcp-definitions-table {
@@ -1243,7 +1243,7 @@ button.icon-button {
 }
 
 .search-hit-text {
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
 }
 
 /* Uses the themed info pair rather than the UA default yellow, which is
@@ -1365,7 +1365,7 @@ button.icon-button {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
   padding: 0.05rem var(--space-2);
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
 }
 
 .provenance-file {
@@ -1516,7 +1516,7 @@ button.icon-button {
   padding: var(--space-1) var(--space-2);
   border-radius: var(--radius-sm);
   font-size: 0.9rem;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
 }
 
 .capability-nav-list a:hover {
@@ -1581,7 +1581,7 @@ button.icon-button {
 
 .capability-facts dd {
   margin: var(--space-1) 0 0;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
 }
 
 .capability-fieldset {
@@ -1658,7 +1658,7 @@ button.icon-button {
   vertical-align: top;
   padding: var(--space-1) var(--space-2);
   border-bottom: 1px solid var(--color-border);
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
 }
 
 @media (max-width: 900px) {
