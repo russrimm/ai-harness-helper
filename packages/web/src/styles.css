@@ -868,6 +868,12 @@ a.stat-card-link:focus-visible .stat-card-label {
   margin: var(--space-3) 0;
 }
 
+.file-detail-actions .icon-button {
+  min-width: 4rem;
+  min-height: 2.625rem;
+  padding: var(--space-2) var(--space-4);
+}
+
 .redaction-panel {
   background: var(--color-bg-sunken);
   border-radius: var(--radius-md);
