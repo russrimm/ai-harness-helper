@@ -50,6 +50,32 @@ describe('scanning and inventory', () => {
     expect(tree.every((group) => group.files.length > 0)).toBe(true);
   });
 
+  // The tree is the only listing that offers a delete for a file nobody has
+  // opened, so it has to carry the same verdict the delete route enforces.
+  it('marks each tree file with the deletability the delete route would apply', async () => {
+    const files = (await service().getTree()).flatMap((group) => group.files);
+
+    const agent = files.find((file) => file.name === 'reviewer.md');
+    expect(agent?.deletable).toBe(true);
+    expect(agent?.notDeletableReason).toBeUndefined();
+
+    const mcp = files.find((file) => file.name === 'mcp.json');
+    expect(mcp?.deletable).toBe(false);
+    expect(mcp?.notDeletableReason).toContain('MCP servers');
+
+    const credentials = files.find((file) => file.name === '.credentials.json');
+    expect(credentials?.deletable).toBe(false);
+  });
+
+  it('offers no tree deletion at all in a read-only session', async () => {
+    const files = (await service({ readOnly: true }).getTree()).flatMap((group) => group.files);
+    expect(files.length).toBeGreaterThan(0);
+    expect(files.every((file) => !file.deletable)).toBe(true);
+    expect(files.every((file) => file.notDeletableReason === 'This session is read-only.')).toBe(
+      true,
+    );
+  });
+
   it('passes project-only mode through to scans and source descriptions', async () => {
     const harness = new HarnessService({
       environment: fixture.environment,

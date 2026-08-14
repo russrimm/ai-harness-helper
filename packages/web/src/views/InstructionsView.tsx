@@ -11,7 +11,12 @@ import { useMemo, useState } from 'react';
 import type { ReactElement } from 'react';
 import { getHealth, getInventory } from '../api/client.js';
 import { Badge, scopeVariant } from '../components/Badge.js';
-import { DeleteButton, DeleteConfirm, DeleteNoticeBanner } from '../components/DeleteControl.js';
+import {
+  DeleteButton,
+  DeleteConfirm,
+  DeleteNoticeBanner,
+  deleteConfirmId,
+} from '../components/DeleteControl.js';
 import {
   DuplicateBadge,
   DuplicateSiblings,
@@ -242,16 +247,21 @@ function InstructionRow({
           {entry.title}
         </a>
         <DuplicateBadge info={entry.duplicate} />
-        <EntryDelete
-          entry={entry}
-          label={entry.title}
-          noun="instruction file"
-          deletion={deletion}
-          readOnly={readOnly}
-        />
       </div>
       {entry.description ? <p className="instruction-description">{entry.description}</p> : null}
-      <Provenance entry={entry} showScope={false} />
+      <Provenance
+        entry={entry}
+        showScope={false}
+        deleteAction={
+          <EntryDelete
+            entry={entry}
+            label={entry.title}
+            noun="instruction file"
+            deletion={deletion}
+            readOnly={readOnly}
+          />
+        }
+      />
       <p className="muted small">
         {entry.lineCount} line(s) &middot; {entry.bytes} bytes
         {entry.appliesTo ? (
@@ -284,7 +294,7 @@ interface DeletableEntry {
 }
 
 function confirmId(fileId: string): string {
-  return `delete-${encodeURIComponent(fileId).replace(/%/g, '-')}`;
+  return deleteConfirmId('entry', fileId);
 }
 
 /**
@@ -292,7 +302,10 @@ function confirmId(fileId: string): string {
  *
  * Renders nothing at all in a read-only session rather than a disabled button
  * on every row, because `--read-only` is a property of the whole run and
- * repeating it forty times is noise.
+ * repeating it forty times is noise. It sits against the filename in the
+ * provenance line, because the file is what it removes — an entry title can be
+ * one of several things a folder contributes, and the path is the only part of
+ * a row that identifies what is about to disappear.
  */
 function EntryDelete({
   entry,
@@ -316,6 +329,7 @@ function EntryDelete({
       expanded={deletion.confirmingId === entry.fileId}
       busy={deletion.busyId !== undefined}
       controls={confirmId(entry.fileId)}
+      compact
       onClick={() => deletion.request(entry.fileId)}
     />
   );
@@ -381,16 +395,20 @@ function CapabilityRollup({
                 <div className="capability-card-header">
                   <a href={`#/files/${encodeURIComponent(capability.fileId)}`}>{capability.name}</a>
                   <DuplicateBadge info={capability.duplicate} />
-                  <EntryDelete
-                    entry={capability}
-                    label={capability.name}
-                    noun={CAPABILITY_NOUNS[capability.kind]}
-                    deletion={deletion}
-                    readOnly={readOnly}
-                  />
                 </div>
                 {capability.description ? <p>{capability.description}</p> : null}
-                <Provenance entry={capability} />
+                <Provenance
+                  entry={capability}
+                  deleteAction={
+                    <EntryDelete
+                      entry={capability}
+                      label={capability.name}
+                      noun={CAPABILITY_NOUNS[capability.kind]}
+                      deletion={deletion}
+                      readOnly={readOnly}
+                    />
+                  }
+                />
                 {capability.model || (capability.tools && capability.tools.length > 0) ? (
                   <p className="muted small">
                     {capability.model ? <>Model: {capability.model}</> : null}
@@ -433,15 +451,19 @@ function GuardrailCard({
         <a href={`#/files/${encodeURIComponent(entry.fileId)}`}>{entry.fileName}</a>
         <span className="chip">{entry.kind}</span>
         <DuplicateBadge info={entry.duplicate} />
-        <EntryDelete
-          entry={entry}
-          label={entry.fileName}
-          noun="guardrail file"
-          deletion={deletion}
-          readOnly={readOnly}
-        />
       </div>
-      <Provenance entry={entry} />
+      <Provenance
+        entry={entry}
+        deleteAction={
+          <EntryDelete
+            entry={entry}
+            label={entry.fileName}
+            noun="guardrail file"
+            deletion={deletion}
+            readOnly={readOnly}
+          />
+        }
+      />
       <div className="guardrail-rules">
         <RuleList label="Allow" rules={entry.allow} tone="ok" />
         <RuleList label="Deny" rules={entry.deny} tone="error" />

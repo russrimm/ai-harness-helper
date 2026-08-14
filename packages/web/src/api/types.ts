@@ -92,7 +92,13 @@ export interface ScanResult {
 export interface ProviderGroup {
   providerId: string;
   providerName: string;
-  files: DiscoveredFile[];
+  files: TreeFile[];
+}
+
+/** A tree file carries its own deletability, as decided by the service. */
+export interface TreeFile extends DiscoveredFile {
+  deletable: boolean;
+  notDeletableReason?: string;
 }
 
 export interface ScanResponse extends ScanResult {

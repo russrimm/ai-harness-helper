@@ -13,6 +13,10 @@
  *   tooltip;
  * - confirming happens inline, names the exact path, and moves focus to the
  *   heading so the step is not silent to a screen reader.
+ *
+ * The `compact` variant is the same control at the size a filename in a dense
+ * list can carry. It is only ever smaller visually: the accessible name, the
+ * reason, and the target size floor are identical.
  */
 
 import { useEffect, useRef } from 'react';
@@ -36,6 +40,7 @@ export function DeleteButton({
   expanded,
   busy,
   controls,
+  compact = false,
   onClick,
 }: {
   target: DeleteTarget;
@@ -44,13 +49,15 @@ export function DeleteButton({
   expanded: boolean;
   busy: boolean;
   controls: string;
+  /** Sits beside a filename in a list rather than in a row of actions. */
+  compact?: boolean;
   onClick: () => void;
 }): ReactElement {
   const name = `Delete ${target.noun} ${target.label}`;
   return (
     <button
       type="button"
-      className="danger icon-button"
+      className={compact ? 'danger icon-button icon-button-compact' : 'danger icon-button'}
       onClick={deletable ? onClick : undefined}
       // Only the transient states truly disable the control. A file that may
       // never be deleted stays focusable so its reason can be read.
@@ -144,6 +151,17 @@ export function DeleteNoticeBanner({
       </div>
     </div>
   );
+}
+
+/**
+ * A DOM id for one file's confirmation panel.
+ *
+ * Shared so the trigger's `aria-controls` and the panel's `id` cannot drift
+ * apart in the four places that now render this pair. File ids contain path
+ * separators, so they are escaped into something valid in an id.
+ */
+export function deleteConfirmId(prefix: string, fileId: string): string {
+  return `${prefix}-delete-${encodeURIComponent(fileId).replace(/%/g, '-')}`;
 }
 
 /** Turns a refusal into advice, rather than echoing an error code. */
