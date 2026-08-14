@@ -7,7 +7,7 @@
  * that eventually forgets to render part of it.
  */
 
-import type { ReactElement } from 'react';
+import type { ReactElement, ReactNode } from 'react';
 import { Badge, scopeVariant } from './Badge.js';
 import { SCOPE_LABELS } from '../lib/scope.js';
 import type { DuplicateInfo, EntryProvenance } from '../api/types.js';
@@ -15,9 +15,18 @@ import type { DuplicateInfo, EntryProvenance } from '../api/types.js';
 export function Provenance({
   entry,
   showScope = true,
+  deleteAction,
 }: {
   entry: EntryProvenance;
   showScope?: boolean;
+  /**
+   * The control that deletes the file named here.
+   *
+   * Taken as a slot rather than built from props so the delete stays wired to
+   * whichever view owns the deletion state, while still sitting against the
+   * filename it actually removes instead of a title two lines above it.
+   */
+  deleteAction?: ReactNode;
 }): ReactElement {
   return (
     <p className="provenance">
@@ -34,6 +43,7 @@ export function Provenance({
         {entry.fileName}
         <span className="visually-hidden"> — open in the file editor</span>
       </a>
+      {deleteAction}
     </p>
   );
 }

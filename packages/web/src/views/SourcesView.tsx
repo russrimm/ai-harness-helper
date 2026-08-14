@@ -12,10 +12,17 @@ import { useMemo, useState } from 'react';
 import type { ReactElement } from 'react';
 import { getSources } from '../api/client.js';
 import { Badge, scopeVariant } from '../components/Badge.js';
+import {
+  DeleteButton,
+  DeleteConfirm,
+  DeleteNoticeBanner,
+  deleteConfirmId,
+} from '../components/DeleteControl.js';
 import { EmptyState, ErrorState, LoadingState } from '../components/StatusStates.js';
 import { useAsync } from '../hooks/useAsync.js';
+import { useFileDeletion, type FileDeletion } from '../hooks/useFileDeletion.js';
 import { SCOPE_LABELS } from '../lib/scope.js';
-import type { SourceLocation, SourceProvider } from '../api/types.js';
+import type { SourceFileRef, SourceLocation, SourceProvider } from '../api/types.js';
 
 const CATEGORY_LABELS: Record<SourceProvider['category'], string> = {
   'agent-cli': 'Agent CLI',
@@ -43,6 +50,10 @@ export function SourcesView(): ReactElement {
   const [query, setQuery] = useState('');
   const [showAbsent, setShowAbsent] = useState(false);
 
+  // A deleted file has to leave the map it was listed on, so the whole sources
+  // response is refetched rather than the row being spliced out locally.
+  const deletion = useFileDeletion(sources.reload);
+
   const needle = query.trim().toLowerCase();
   const providers = useMemo(() => {
     const all = sources.data?.providers ?? [];
@@ -62,7 +73,7 @@ export function SourcesView(): ReactElement {
   }
   if (!sources.data) return <EmptyState title="No data available." />;
 
-  const { totals, home, platform, projectRoots } = sources.data;
+  const { totals, home, platform, projectRoots, readOnly } = sources.data;
 
   return (
     <div className="view view-sources">
@@ -81,6 +92,8 @@ export function SourcesView(): ReactElement {
           Add a root on the Overview page to resolve them.
         </p>
       ) : null}
+
+      <DeleteNoticeBanner notice={deletion.notice} onDismiss={deletion.dismissNotice} />
 
       <div className="toolbar">
         <label htmlFor="sources-filter">Filter by tool, folder, or path</label>
@@ -109,7 +122,13 @@ export function SourcesView(): ReactElement {
       ) : (
         <ul className="source-list">
           {providers.map((provider) => (
-            <ProviderCard key={provider.providerId} provider={provider} showAbsent={showAbsent} />
+            <ProviderCard
+              key={provider.providerId}
+              provider={provider}
+              showAbsent={showAbsent}
+              deletion={deletion}
+              readOnly={readOnly}
+            />
           ))}
         </ul>
       )}
@@ -120,9 +139,13 @@ export function SourcesView(): ReactElement {
 function ProviderCard({
   provider,
   showAbsent,
+  deletion,
+  readOnly,
 }: {
   provider: SourceProvider;
   showAbsent: boolean;
+  deletion: FileDeletion;
+  readOnly: boolean;
 }): ReactElement {
   const locations = showAbsent
     ? provider.locations
@@ -173,6 +196,8 @@ function ProviderCard({
               <LocationRow
                 key={`${location.locationId}:${location.projectRoot ?? ''}`}
                 location={location}
+                deletion={deletion}
+                readOnly={readOnly}
               />
             ))}
           </tbody>
@@ -182,7 +207,15 @@ function ProviderCard({
   );
 }
 
-function LocationRow({ location }: { location: SourceLocation }): ReactElement {
+function LocationRow({
+  location,
+  deletion,
+  readOnly,
+}: {
+  location: SourceLocation;
+  deletion: FileDeletion;
+  readOnly: boolean;
+}): ReactElement {
   const directories =
     location.directories.length > 0
       ? location.directories
@@ -232,22 +265,75 @@ function LocationRow({ location }: { location: SourceLocation }): ReactElement {
         ) : (
           <ul className="source-files">
             {location.files.map((file) => (
-              <li key={file.fileId}>
-                <a href={`#/files/${encodeURIComponent(file.fileId)}`}>{file.name}</a>{' '}
-                {location.directories.length > 1 ? (
-                  <span className="muted small">
-                    in <code>{file.directory}</code>
-                  </span>
-                ) : null}{' '}
-                <span className="muted small">
-                  {file.editable ? 'editable' : (file.notEditableReason ?? 'read-only')}
-                </span>
-              </li>
+              <SourceFileItem
+                key={file.fileId}
+                file={file}
+                showDirectory={location.directories.length > 1}
+                deletion={deletion}
+                readOnly={readOnly}
+              />
             ))}
           </ul>
         )}
       </td>
     </tr>
+  );
+}
+
+/**
+ * One file on the sources map, with the control that removes it.
+ *
+ * This listing is the only place a file appears next to every other location
+ * the same tool reads, which is exactly when someone spots the stray copy they
+ * meant to delete — so the trigger lives here rather than only in the editor.
+ */
+function SourceFileItem({
+  file,
+  showDirectory,
+  deletion,
+  readOnly,
+}: {
+  file: SourceFileRef;
+  showDirectory: boolean;
+  deletion: FileDeletion;
+  readOnly: boolean;
+}): ReactElement {
+  const target = { label: file.name, noun: 'file', displayPath: file.displayPath };
+  const confirmId = deleteConfirmId('source', file.fileId);
+
+  return (
+    <li>
+      <a href={`#/files/${encodeURIComponent(file.fileId)}`}>{file.name}</a>{' '}
+      {showDirectory ? (
+        <span className="muted small">
+          in <code>{file.directory}</code>
+        </span>
+      ) : null}{' '}
+      <span className="muted small">
+        {file.editable ? 'editable' : (file.notEditableReason ?? 'read-only')}
+      </span>
+      {readOnly ? null : (
+        <DeleteButton
+          target={target}
+          deletable={file.deletable}
+          reason={file.notDeletableReason}
+          expanded={deletion.confirmingId === file.fileId}
+          busy={deletion.busyId !== undefined}
+          controls={confirmId}
+          compact
+          onClick={() => deletion.request(file.fileId)}
+        />
+      )}
+      {deletion.confirmingId === file.fileId ? (
+        <DeleteConfirm
+          id={confirmId}
+          target={target}
+          busy={deletion.busyId === file.fileId}
+          onConfirm={() => deletion.confirm(file.fileId, file.name)}
+          onCancel={deletion.cancel}
+        />
+      ) : null}
+    </li>
   );
 }
 

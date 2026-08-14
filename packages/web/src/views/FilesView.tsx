@@ -11,7 +11,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
-import { getFile, getScan, putFile, revealFileValue } from '../api/client.js';
+import { getFile, getHealth, getScan, putFile, revealFileValue } from '../api/client.js';
 import { Badge, scopeVariant } from '../components/Badge.js';
 import { CodeEditor } from '../components/CodeEditor.js';
 import { DeleteButton, DeleteConfirm, DeleteNoticeBanner } from '../components/DeleteControl.js';
@@ -61,7 +61,10 @@ function describeRedaction(redaction: RedactionRecord): string {
 }
 
 export function FilesView({ initialFileId }: { initialFileId: string | undefined }): ReactElement {
-  const scan = useAsync(getScan, []);
+  const scan = useAsync(async () => {
+    const [result, health] = await Promise.all([getScan(), getHealth()]);
+    return { ...result, readOnly: health.readOnly };
+  }, []);
   const theme = useTheme();
 
   const [doc, setDoc] = useState<FileDocument | undefined>(undefined);
@@ -187,11 +190,24 @@ export function FilesView({ initialFileId }: { initialFileId: string | undefined
   // Once the file is gone the tree still lists it until the scan is redone,
   // and the detail pane would be showing a file that no longer exists, so the
   // selection is dropped back to "nothing selected".
-  const deletion = useFileDeletion(() => {
+  const clearSelection = (): void => {
     setDoc(undefined);
     setEditing(false);
     setEditDoc(undefined);
     window.location.hash = '#/files';
+  };
+
+  const deletion = useFileDeletion(() => {
+    clearSelection();
+    reloadScan();
+  });
+
+  // The tree keeps its own deletion state rather than sharing the detail
+  // pane's. Both can point at the same file, and one shared state would arm
+  // two confirmation panels for it at once — two dialogs, two ids, and a fight
+  // over focus.
+  const treeDeletion = useFileDeletion((fileId) => {
+    if (fileId === initialFileId) clearSelection();
     reloadScan();
   });
 
@@ -205,6 +221,7 @@ export function FilesView({ initialFileId }: { initialFileId: string | undefined
     return (
       <div className="view view-files">
         <DeleteNoticeBanner notice={deletion.notice} onDismiss={deletion.dismissNotice} />
+        <DeleteNoticeBanner notice={treeDeletion.notice} onDismiss={treeDeletion.dismissNotice} />
         <EmptyState
           title="No configuration files were discovered yet."
           detail="Run a scan from the Overview page."
@@ -215,9 +232,15 @@ export function FilesView({ initialFileId }: { initialFileId: string | undefined
 
   return (
     <div className="view view-files files-layout">
-      <FileTree tree={scan.data.tree} selectedFileId={initialFileId} />
+      <FileTree
+        tree={scan.data.tree}
+        selectedFileId={initialFileId}
+        deletion={treeDeletion}
+        readOnly={scan.data.readOnly}
+      />
       <div className="file-detail">
         <DeleteNoticeBanner notice={deletion.notice} onDismiss={deletion.dismissNotice} />
+        <DeleteNoticeBanner notice={treeDeletion.notice} onDismiss={treeDeletion.dismissNotice} />
         {!initialFileId ? (
           <EmptyState
             title="Select a file"

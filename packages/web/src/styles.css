@@ -644,6 +644,19 @@
     @apply m-0 list-none p-0;
   }
 
+  /*
+   * The name and its delete share a row, and the link takes the slack so the
+   * trigger stays in a predictable column instead of tracking each filename's
+   * length.
+   */
+  .file-tree-row {
+    @apply flex items-center gap-1;
+  }
+
+  .file-tree-row .file-tree-link {
+    @apply min-w-0 flex-1;
+  }
+
   .file-tree-link {
     @apply flex justify-between gap-2 rounded-md px-2 py-1 text-sm text-fg no-underline transition-colors;
   }
@@ -843,6 +856,16 @@
    */
   button.icon-button {
     @apply px-2 py-1 leading-none;
+  }
+
+  /*
+   * The same trigger at the size a filename in a list can carry. It is still
+   * held at a 24px target so shrinking it to match the text does not put it
+   * under the WCAG 2.5.8 minimum, and it is nudged off the baseline so it
+   * lines up with the name rather than sitting on top of it.
+   */
+  button.icon-button-compact {
+    @apply inline-flex min-h-6 min-w-6 items-center justify-center px-1 py-0 align-middle text-xs;
   }
 
   /*
@@ -1054,6 +1077,10 @@
   .source-directory ul,
   .source-files {
     @apply m-0 flex list-none flex-col gap-1 p-0;
+  }
+
+  .source-files button.icon-button-compact {
+    @apply ml-1;
   }
 
   .source-list {

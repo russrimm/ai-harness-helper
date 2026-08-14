@@ -97,6 +97,27 @@ export interface FileDocument {
   readonly notDeletableReason?: string;
 }
 
+/**
+ * A file in the browser tree, plus whether this session may delete it.
+ *
+ * Deletability travels with the file rather than being looked up per row,
+ * because the tree is the one place that lists files the user has not opened —
+ * without it the browser would have to guess, and a guess that disagrees with
+ * `fileDeletability` is a button that promises something the API refuses.
+ */
+export interface TreeFile extends DiscoveredFile {
+  readonly deletable: boolean;
+  /** Why deleting is not offered, when it is not. */
+  readonly notDeletableReason?: string;
+}
+
+/** Files grouped by the tool that owns them, for the browser tree. */
+export interface TreeProviderGroup {
+  readonly providerId: string;
+  readonly providerName: string;
+  readonly files: readonly TreeFile[];
+}
+
 /** One hit from a content search. */
 export interface SearchHit {
   readonly fileId: string;
@@ -397,10 +418,28 @@ export class HarnessService {
     return this.#inventory as HarnessInventory;
   }
 
-  /** Files grouped by provider, for the browser tree. */
-  async getTree(): Promise<ReturnType<typeof groupByProvider>> {
+  /**
+   * Files grouped by provider, for the browser tree.
+   *
+   * Each file carries its own deletability so the tree can offer a delete
+   * exactly where the API would allow one. Re-deriving the rule in the browser
+   * is what would eventually put a live button on a file the service refuses
+   * to touch.
+   */
+  async getTree(): Promise<TreeProviderGroup[]> {
     const result = await this.getScan();
-    return groupByProvider(result.files);
+    return groupByProvider(result.files).map((group) => ({
+      providerId: group.providerId,
+      providerName: group.providerName,
+      files: group.files.map((file) => {
+        const undeletable = this.#deleteBlockReason(file);
+        return {
+          ...file,
+          deletable: undeletable === undefined,
+          ...(undeletable !== undefined ? { notDeletableReason: undeletable } : {}),
+        };
+      }),
+    }));
   }
 
   /**
