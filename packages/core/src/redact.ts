@@ -175,6 +175,86 @@ export function detectSecretValue(value: string): string | undefined {
 }
 
 /**
+ * Finds a credential glued to its flag or query-parameter name — `--api-key=sk-…`,
+ * `TOKEN=ghp_…`, or `?api_key=sk-…` inside a URL — and masks only the secret
+ * portion.
+ *
+ * `detectSecretValue` alone misses these because the fully-anchored patterns
+ * it tests never match a string that starts with `--api-key=` or `?api_key=`
+ * rather than the secret prefix itself. This mirrors the splitting
+ * `maskArgs`/`maskUrl` already do for the MCP summary table and export, so the
+ * same credentials are not left in the clear in the raw-text file viewer and
+ * search results.
+ */
+export function findEmbeddedSecret(
+  raw: string,
+): { readonly masked: string; readonly detector: string } | undefined {
+  const url = tryParseUrl(raw);
+  if (url !== undefined) {
+    let changed = false;
+    let detector: string | undefined;
+
+    for (const [name, value] of [...url.searchParams]) {
+      if (value.length === 0 || isPlaceholderValue(value)) continue;
+      const valueDetector = detectSecretValue(value);
+      if (isSecretKey(name) || valueDetector !== undefined) {
+        url.searchParams.set(name, REDACTED_PLACEHOLDER);
+        changed = true;
+        detector ??= valueDetector ?? `${name} query parameter`;
+      }
+    }
+
+    if (url.password !== '') {
+      url.password = REDACTED_PLACEHOLDER;
+      changed = true;
+      detector ??= 'Credentialed URL';
+    }
+
+    if (changed) return { masked: url.toString(), detector: detector ?? 'Credentialed URL' };
+  }
+
+  const equals = raw.indexOf('=');
+  if (equals > 0) {
+    const name = raw.slice(0, equals).replace(/^-+/, '');
+    const value = raw.slice(equals + 1);
+    if (value.length > 0 && !isPlaceholderValue(value)) {
+      const valueDetector = detectSecretValue(value);
+      if (isSecretKey(name) || valueDetector !== undefined) {
+        return {
+          masked: `${raw.slice(0, equals + 1)}${REDACTED_PLACEHOLDER}`,
+          detector: valueDetector ?? `${name} flag`,
+        };
+      }
+    }
+  }
+
+  return undefined;
+}
+
+function tryParseUrl(value: string): URL | undefined {
+  if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(value)) return undefined;
+  try {
+    return new URL(value);
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Resolves whether a candidate token should be masked, trying a whole-value
+ * credential shape first and falling back to a glued `flag=value` /
+ * URL-query embedded secret. Shared by every free-form sweep so the two
+ * detectors stay in lockstep.
+ */
+function resolveSweepMasking(
+  candidate: string,
+): { readonly masked: string; readonly detector: string } | undefined {
+  const detector = detectSecretValue(candidate);
+  if (detector !== undefined) return { masked: maskValue(candidate), detector };
+  return findEmbeddedSecret(candidate);
+}
+
+/**
  * Masks a value while preserving enough shape to be recognisable.
  *
  * Short values are masked entirely; longer ones keep a four-character prefix
@@ -216,6 +296,19 @@ export function redactValue<T>(input: T): RedactionResult<T> {
         });
         return maskValue(node);
       }
+
+      const embedded = findEmbeddedSecret(node);
+      if (embedded !== undefined) {
+        redactions.push({
+          path,
+          id: path,
+          reason: 'value-shape',
+          detector: embedded.detector,
+          length: node.length,
+        });
+        return embedded.masked;
+      }
+
       return node;
     }
 
@@ -308,18 +401,18 @@ export function redactText(text: string): { value: string; redactions: Redaction
   let index = 0;
 
   const value = text.replace(/[A-Za-z0-9_\-./+=:~]{16,}/g, (candidate) => {
-    const detector = detectSecretValue(candidate);
-    if (detector === undefined) return candidate;
+    const resolved = resolveSweepMasking(candidate);
+    if (resolved === undefined) return candidate;
     const path = `text[${index}]`;
     redactions.push({
       path,
       id: path,
       reason: 'value-shape',
-      detector,
+      detector: resolved.detector,
       length: candidate.length,
     });
     index += 1;
-    return maskValue(candidate);
+    return resolved.masked;
   });
 
   return { value, redactions };
@@ -421,6 +514,19 @@ export function redactDocumentText(text: string): {
             `${valueQuote}${trailer}${entry.terminator}`
           );
         }
+
+        // The key itself isn't secret-shaped and the whole value doesn't match a
+        // known credential pattern, but a credential can still be glued to a
+        // flag or hidden in a URL's query string — `--api-key=sk-…`, an SSE
+        // endpoint's `?api_key=…`. Catch those before falling through.
+        const embedded = findEmbeddedSecret(value);
+        if (embedded !== undefined) {
+          record(lineNumber, key, value, 'value-shape', embedded.detector);
+          return (
+            `${indent}${keyQuote}${key}${keyQuote}${separator}${valueQuote}${embedded.masked}` +
+            `${valueQuote}${trailer}${entry.terminator}`
+          );
+        }
       }
       return line + entry.terminator;
     }
@@ -431,10 +537,16 @@ export function redactDocumentText(text: string): {
     const swept = line.replace(
       /[A-Za-z0-9_\-./+=:~]{16,}/g,
       (candidate, offset: number, whole: string) => {
-        const detector = detectSecretValue(candidate);
-        if (detector === undefined) return candidate;
-        record(lineNumber, nearestKeyBefore(whole, offset), candidate, 'value-shape', detector);
-        return maskValue(candidate);
+        const resolved = resolveSweepMasking(candidate);
+        if (resolved === undefined) return candidate;
+        record(
+          lineNumber,
+          nearestKeyBefore(whole, offset),
+          candidate,
+          'value-shape',
+          resolved.detector,
+        );
+        return resolved.masked;
       },
     );
     return swept + entry.terminator;

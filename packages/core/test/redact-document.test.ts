@@ -166,4 +166,21 @@ describe('redactDocumentText', () => {
     const source = '{\r\n  "model": "opus"\r\n}';
     expect(redactDocumentText(source).value).toBe(source);
   });
+
+  it('masks a credential glued to its flag inside an args array', () => {
+    const source = '"args": ["--api-key=sk-proj-ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890", "run"]';
+    const { value, redactions } = redactDocumentText(source);
+    expect(value).not.toContain('sk-proj-ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890');
+    expect(value).toContain('--api-key=');
+    expect(redactions).toHaveLength(1);
+  });
+
+  it('masks a credential carried in a URL query string value', () => {
+    const source =
+      '"url": "https://mcp.example.com/sse?api_key=sk-proj-ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890"';
+    const { value, redactions } = redactDocumentText(source);
+    expect(value).not.toContain('sk-proj-ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890');
+    expect(value).toContain('https://mcp.example.com/sse');
+    expect(redactions).toHaveLength(1);
+  });
 });
