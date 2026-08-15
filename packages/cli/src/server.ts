@@ -123,6 +123,8 @@ export async function createServer(options: ServerOptions): Promise<HarnessServe
 
   app.get('/api/inventory', async () => service.getInventory());
 
+  app.get('/api/effective', async () => service.getEffective());
+
   app.get('/api/sources', async () => service.getSources());
 
   app.get('/api/overview', async () => {

@@ -7,6 +7,8 @@ const LINKS: Array<{ path: string; label: string }> = [
   { path: '/mcp', label: 'MCP' },
   { path: '/capabilities', label: 'Skills & agents' },
   { path: '/instructions', label: 'Instructions' },
+  { path: '/effective', label: 'Effective' },
+  { path: '/models', label: 'Models' },
   { path: '/search', label: 'Search' },
   { path: '/export', label: 'Export' },
 ];

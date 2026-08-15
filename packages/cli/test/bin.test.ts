@@ -14,6 +14,8 @@ describe('parseArgs', () => {
       projectsOnly: false,
       help: false,
       version: false,
+      report: undefined,
+      failOn: undefined,
     });
   });
 
@@ -76,5 +78,53 @@ describe('parseArgs', () => {
     expect(options.open).toBe(false);
     expect(options.port).toBe(8080);
     expect(options.projects).toEqual([resolve('.')]);
+  });
+});
+
+describe('parseArgs - headless reporting', () => {
+  it('treats --json as a request for a JSON report', () => {
+    expect(parseArgs(['--json']).report).toBe('json');
+  });
+
+  it('parses --report in both spaced and equals form', () => {
+    expect(parseArgs(['--report', 'json']).report).toBe('json');
+    expect(parseArgs(['--report=markdown']).report).toBe('markdown');
+    expect(parseArgs(['--report', 'md']).report).toBe('markdown');
+  });
+
+  it('rejects a report format it cannot produce', () => {
+    expect(() => parseArgs(['--report', 'yaml'])).toThrow(/--report/);
+    expect(() => parseArgs(['--report'])).toThrow(/--report/);
+    expect(() => parseArgs(['--report='])).toThrow(/--report/);
+  });
+
+  it('parses --fail-on in both spaced and equals form', () => {
+    expect(parseArgs(['--fail-on', 'warning']).failOn).toBe('warning');
+    expect(parseArgs(['--fail-on=info']).failOn).toBe('info');
+  });
+
+  it('rejects a severity that is not a real level', () => {
+    expect(() => parseArgs(['--fail-on', 'critical'])).toThrow(/--fail-on/);
+    expect(() => parseArgs(['--fail-on'])).toThrow(/--fail-on/);
+  });
+
+  it('defaults --check to failing on errors only', () => {
+    expect(parseArgs(['--check']).failOn).toBe('error');
+  });
+
+  it('lets an explicit --fail-on win over the --check default', () => {
+    expect(parseArgs(['--fail-on', 'warning', '--check']).failOn).toBe('warning');
+    expect(parseArgs(['--fail-on=warning', '--check']).failOn).toBe('warning');
+  });
+
+  it('never opens a browser when the output is going to stdout', () => {
+    // stdout is the report, so a browser would only be noise.
+    for (const args of [['--json'], ['--report=markdown'], ['--check'], ['--fail-on', 'info']]) {
+      expect(parseArgs(args).open).toBe(false);
+    }
+  });
+
+  it('still serves the UI when no headless flag is present', () => {
+    expect(parseArgs(['--read-only']).open).toBe(true);
   });
 });

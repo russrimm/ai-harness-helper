@@ -149,6 +149,31 @@ describe('read routes', () => {
     expect(body.detectedProviders.length).toBeGreaterThan(0);
   });
 
+  it('resolves effective configuration per provider', async () => {
+    const body = (await call({ url: '/api/effective' })).json() as {
+      providers: {
+        providerId: string;
+        entries: { key: string; name: string; strategy: string; winnerFileId?: string }[];
+      }[];
+      totalEntries: number;
+      totalShadowed: number;
+      totalContested: number;
+    };
+    expect(body.providers.length).toBeGreaterThan(0);
+    expect(body.totalEntries).toBeGreaterThan(0);
+    expect(body.totalShadowed).toBeGreaterThanOrEqual(0);
+    expect(body.totalContested).toBeLessThanOrEqual(body.totalShadowed);
+    for (const provider of body.providers) {
+      expect(provider.providerId).toBeTruthy();
+      for (const entry of provider.entries) {
+        expect(entry.key).toBeTruthy();
+        expect(entry.name).toBeTruthy();
+        // Only an override picks a single winner; a merge layers everything.
+        if (entry.strategy === 'override') expect(entry.winnerFileId).toBeTruthy();
+      }
+    }
+  });
+
   it('rescans on POST', async () => {
     // The GET establishes a cached scan; the new file must not appear until a
     // rescan is explicitly requested.

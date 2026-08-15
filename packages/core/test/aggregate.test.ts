@@ -336,6 +336,124 @@ describe('aggregate - capabilities', () => {
   });
 });
 
+describe('aggregate - model pins', () => {
+  // Fixed clocks, because the point of the feature is that status is derived
+  // from an announced date rather than baked into the table.
+  const BEFORE_SHUTDOWNS = new Date('2024-01-01T00:00:00Z');
+  const AFTER_SHUTDOWNS = new Date('2099-01-01T00:00:00Z');
+
+  async function withClock(now: Date, projectRoots: string[] = []): Promise<HarnessInventory> {
+    const result = await scan({ environment: fixture.environment, projectRoots });
+    return aggregate(result, { now });
+  }
+
+  it('finds a model pinned in agent front matter', async () => {
+    fixture.write(
+      '.claude/agents/reviewer.md',
+      '---\nname: reviewer\nmodel: gpt-4-32k\n---\n\nGo.\n',
+    );
+
+    const result = await withClock(AFTER_SHUTDOWNS);
+    const pin = result.modelUsage.find((entry) => entry.reference === 'gpt-4-32k');
+
+    expect(pin).toBeDefined();
+    expect(pin?.path).toBe('model');
+    expect(pin?.entityName).toBe('reviewer');
+    expect(pin?.assessment.status).toBe('retired');
+  });
+
+  it('finds a model pinned deep inside a settings file', async () => {
+    fixture.write(
+      '.cursor/mcp.json',
+      JSON.stringify({ assistant: { default_model: 'gpt-4-32k' } }),
+    );
+
+    const result = await withClock(AFTER_SHUTDOWNS);
+
+    expect(result.modelUsage.some((entry) => entry.path === 'assistant.default_model')).toBe(true);
+  });
+
+  it('raises an error finding for a model that is already shut down', async () => {
+    fixture.write(
+      '.claude/agents/reviewer.md',
+      '---\nname: reviewer\nmodel: gpt-4-32k\n---\n\nGo.\n',
+    );
+
+    const result = await withClock(AFTER_SHUTDOWNS);
+    const finding = result.findings.find((entry) => entry.code === 'outdated-model');
+
+    expect(finding?.severity).toBe('error');
+    expect(finding?.remediation).toContain('Repoint');
+  });
+
+  it('raises only a warning while the shutdown is still in the future', async () => {
+    fixture.write(
+      '.claude/agents/reviewer.md',
+      '---\nname: reviewer\nmodel: gpt-4-32k\n---\n\nGo.\n',
+    );
+
+    const result = await withClock(BEFORE_SHUTDOWNS);
+    const finding = result.findings.find((entry) => entry.code === 'outdated-model');
+
+    expect(finding?.severity).toBe('warning');
+  });
+
+  it('raises one finding per model rather than one per file', async () => {
+    const agent = '---\nname: reviewer\nmodel: gpt-4-32k\n---\n\nGo.\n';
+    fixture.write('.claude/agents/reviewer.md', agent);
+    fixture.write(
+      '.claude/agents/auditor.md',
+      '---\nname: auditor\nmodel: gpt-4-32k\n---\n\nGo.\n',
+    );
+
+    const result = await withClock(AFTER_SHUTDOWNS);
+    const findings = result.findings.filter((entry) => entry.code === 'outdated-model');
+
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.fileIds).toHaveLength(2);
+  });
+
+  it('says nothing about a model it does not recognize', async () => {
+    fixture.write(
+      '.claude/agents/reviewer.md',
+      '---\nname: reviewer\nmodel: brand-new-model-2099\n---\n\nGo.\n',
+    );
+
+    const result = await withClock(AFTER_SHUTDOWNS);
+
+    expect(result.modelUsage).toHaveLength(1);
+    expect(result.modelUsage[0]?.assessment.status).toBe('unknown');
+    expect(result.findings.some((entry) => entry.code === 'outdated-model')).toBe(false);
+    expect(result.summary.outdatedModelCount).toBe(0);
+  });
+
+  it('attaches the lifecycle verdict to the capability that declares it', async () => {
+    fixture.write(
+      '.claude/agents/reviewer.md',
+      '---\nname: reviewer\nmodel: gpt-4-32k\n---\n\nGo.\n',
+    );
+
+    const result = await withClock(AFTER_SHUTDOWNS);
+    const reviewer = result.capabilities.find((entry) => entry.name === 'reviewer');
+
+    expect(reviewer?.modelStatus?.status).toBe('retired');
+  });
+
+  it('counts retired pins separately from merely scheduled ones', async () => {
+    fixture.write(
+      '.claude/agents/reviewer.md',
+      '---\nname: reviewer\nmodel: gpt-4-32k\n---\n\nGo.\n',
+    );
+
+    const scheduled = await withClock(BEFORE_SHUTDOWNS);
+    expect(scheduled.summary.outdatedModelCount).toBe(1);
+    expect(scheduled.summary.retiredModelCount).toBe(0);
+
+    const retired = await withClock(AFTER_SHUTDOWNS);
+    expect(retired.summary.retiredModelCount).toBe(1);
+  });
+});
+
 describe('aggregate - guardrails', () => {
   it('extracts permission allow and deny rules', async () => {
     fixture.write('.claude/settings.json', samples.claudeSettings);

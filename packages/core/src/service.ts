@@ -18,6 +18,8 @@ import {
   type CapabilityDocumentBody,
 } from './capability-doc.js';
 import { removeMcpServerFromText } from './mcp-edit.js';
+import { resolveEffective, type EffectiveConfig } from './effective.js';
+import { MODEL_DATA_VERIFIED_ON } from './models.js';
 import { fileDeletability } from './deletable.js';
 import { mapConcurrent, mapConcurrentBatches } from './concurrency.js';
 import { editorLanguage, parseContent, type ParseIssue } from './parsers.js';
@@ -416,6 +418,17 @@ export class HarnessService {
     if (!this.#inventory) await this.refresh();
     // refresh always assigns both, but the compiler cannot know that.
     return this.#inventory as HarnessInventory;
+  }
+
+  /**
+   * Which declaration each tool actually uses, and which are inert.
+   *
+   * Derived on demand from the cached inventory rather than stored alongside
+   * it, because resolution is pure and cheap. Caching it would only create a
+   * second thing that can go stale after an edit.
+   */
+  async getEffective(): Promise<EffectiveConfig> {
+    return resolveEffective(await this.getInventory());
   }
 
   /**
@@ -1274,6 +1287,7 @@ export class HarnessService {
       instructions: inventory.instructions,
       capabilities: inventory.capabilities,
       guardrails: inventory.guardrails,
+      modelUsage: inventory.modelUsage,
       findings: inventory.findings,
       missing: result.missing.length,
       problems: result.problems,
@@ -1359,6 +1373,30 @@ export class HarnessService {
         );
       }
       lines.push('');
+    }
+
+    if (inventory.modelUsage.length > 0) {
+      const outdated = inventory.modelUsage.filter(
+        (entry) =>
+          entry.assessment.status === 'retired' || entry.assessment.status === 'deprecated',
+      );
+      if (outdated.length > 0) {
+        lines.push('## Outdated model pins', '');
+        lines.push('| Model | Status | Shutdown | Replacement | File |');
+        lines.push('| --- | --- | --- | --- | --- |');
+        for (const entry of outdated) {
+          lines.push(
+            `| ${entry.reference} | ${entry.assessment.status} | ` +
+              `${entry.assessment.shutdownDate ?? 'unannounced'} | ` +
+              `${entry.assessment.replacement ?? '—'} | ${entry.displayPath} |`,
+          );
+        }
+        lines.push(
+          '',
+          `Model lifecycle data verified against vendor documentation on ${MODEL_DATA_VERIFIED_ON}.`,
+          '',
+        );
+      }
     }
 
     lines.push('## Sources', '');

@@ -11,6 +11,7 @@ import type {
   CapabilityEdit,
   CapabilityListResponse,
   DeleteOutcome,
+  EffectiveConfig,
   FileDocument,
   HarnessInventory,
   HealthResponse,
@@ -170,6 +171,10 @@ export function postScan(): Promise<ScanResponse> {
 
 export function getInventory(): Promise<HarnessInventory> {
   return request('/api/inventory');
+}
+
+export function getEffective(): Promise<EffectiveConfig> {
+  return request('/api/effective');
 }
 
 export function getSources(): Promise<SourcesResponse> {

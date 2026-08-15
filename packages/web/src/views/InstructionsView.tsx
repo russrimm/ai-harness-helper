@@ -411,7 +411,11 @@ function CapabilityRollup({
                 />
                 {capability.model || (capability.tools && capability.tools.length > 0) ? (
                   <p className="muted small">
-                    {capability.model ? <>Model: {capability.model}</> : null}
+                    {capability.model ? (
+                      <>
+                        Model: {capability.model} <ModelStatusBadge entry={capability} />
+                      </>
+                    ) : null}
                     {capability.model && capability.tools && capability.tools.length > 0
                       ? ' \u00B7 '
                       : null}
@@ -433,6 +437,22 @@ function CapabilityRollup({
         </div>
       ))}
     </div>
+  );
+}
+
+/**
+ * A lifecycle badge for a capability's declared model.
+ *
+ * Only says something when the vendor has: an unrecognized id stays silent,
+ * because a model released last week would otherwise be labelled a problem.
+ */
+function ModelStatusBadge({ entry }: { entry: CapabilityEntry }): ReactElement | null {
+  const status = entry.modelStatus?.status;
+  if (status !== 'retired' && status !== 'deprecated') return null;
+  return (
+    <Badge variant={status === 'retired' ? 'error' : 'warning'}>
+      {status === 'retired' ? 'Retired' : 'Shutdown announced'}
+    </Badge>
   );
 }
 
