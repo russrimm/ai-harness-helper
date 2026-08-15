@@ -160,6 +160,7 @@ export interface DuplicateInfo {
   siblingFileIds: string[];
   siblingDisplayPaths: string[];
   identicalFileIds: string[];
+  contentHash?: string;
 }
 
 export interface McpDefinition extends EntryProvenance {
@@ -227,12 +228,38 @@ export interface InstructionEntry extends EntryProvenance {
 
 export type CapabilityKind = 'agent' | 'skill' | 'command' | 'prompt' | 'chatmode';
 
+export type ModelVendor = 'openai' | 'anthropic' | 'google';
+
+export type ModelStatus = 'active' | 'deprecated' | 'retired' | 'unknown';
+
+export interface ModelAssessment {
+  reference: string;
+  normalized: string;
+  status: ModelStatus;
+  canonicalId?: string;
+  vendor?: ModelVendor;
+  shutdownDate?: string;
+  daysUntilShutdown?: number;
+  replacement?: string;
+  note?: string;
+  sourceUrl?: string;
+}
+
+export interface ModelUsageEntry extends EntryProvenance {
+  path: string;
+  reference: string;
+  entityName?: string;
+  projectRoot?: string;
+  assessment: ModelAssessment;
+}
+
 export interface CapabilityEntry extends EntryProvenance {
   kind: CapabilityKind;
   name: string;
   description?: string;
   tools?: string[];
   model?: string;
+  modelStatus?: ModelAssessment;
   projectRoot?: string;
   duplicate: DuplicateInfo;
 }
@@ -261,6 +288,7 @@ export type FindingCode =
   | 'instruction-duplicate'
   | 'instruction-conflict'
   | 'guardrail-duplicate'
+  | 'outdated-model'
   | 'plaintext-secret'
   | 'unparseable-file'
   | 'empty-file'
@@ -289,6 +317,9 @@ export interface HarnessSummary {
   instructionCount: number;
   capabilityCount: number;
   guardrailCount: number;
+  modelUsageCount: number;
+  outdatedModelCount: number;
+  retiredModelCount: number;
   findingCount: number;
   errorCount: number;
   warningCount: number;
@@ -305,8 +336,58 @@ export interface HarnessInventory {
   instructions: InstructionEntry[];
   capabilities: CapabilityEntry[];
   guardrails: GuardrailEntry[];
+  modelUsage: ModelUsageEntry[];
   findings: HealthFinding[];
   parsedFileIds: string[];
+}
+
+/* ------------------------------------------- Effective configuration -- */
+
+export type ResolutionStrategy = 'override' | 'merge';
+
+export type DeclarationStatus = 'active' | 'shadowed' | 'merged' | 'disabled';
+
+export type EffectiveKind = 'mcp' | 'capability' | 'instruction' | 'guardrail';
+
+export interface EffectiveDeclaration {
+  fileId: string;
+  displayPath: string;
+  directory: string;
+  locationLabel: string;
+  scope: ConfigScope;
+  providerId: string;
+  providerName: string;
+  projectRoot?: string;
+  rank: number;
+  status: DeclarationStatus;
+  reason: string;
+  differs: boolean;
+}
+
+export interface EffectiveEntry {
+  key: string;
+  kind: EffectiveKind;
+  name: string;
+  strategy: ResolutionStrategy;
+  winnerFileId?: string;
+  declarations: EffectiveDeclaration[];
+  shadowedCount: number;
+  contested: boolean;
+}
+
+export interface EffectiveProvider {
+  providerId: string;
+  providerName: string;
+  entries: EffectiveEntry[];
+  shadowedEntryCount: number;
+  contestedEntryCount: number;
+}
+
+export interface EffectiveConfig {
+  providers: EffectiveProvider[];
+  totalEntries: number;
+  totalShadowed: number;
+  totalContested: number;
 }
 
 export interface OverviewResponse {

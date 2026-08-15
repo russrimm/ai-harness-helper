@@ -203,6 +203,12 @@ export function OverviewView(): ReactElement {
             hint="Permissions, hooks, ignores"
             href="#/instructions"
           />
+          <StatCard
+            label="Model pins"
+            value={summary.modelUsageCount}
+            hint="Models named in agents, skills, and settings"
+            href="#/models"
+          />
         </div>
         <p className="muted">
           Scanned <time dateTime={data.scannedAt}>{scannedAtLabel}</time> on {data.platform} in{' '}
@@ -254,6 +260,21 @@ export function OverviewView(): ReactElement {
             tone={
               summary.errorCount > 0 ? 'error' : summary.warningCount > 0 ? 'warning' : undefined
             }
+          />
+          <StatCard
+            label="Outdated models"
+            value={summary.outdatedModelCount}
+            hint={
+              summary.retiredModelCount > 0
+                ? `${summary.retiredModelCount} already shut down`
+                : 'Retired or with a shutdown announced'
+            }
+            href="#/models"
+            {...(summary.retiredModelCount > 0
+              ? { tone: 'error' as const }
+              : summary.outdatedModelCount > 0
+                ? { tone: 'warning' as const }
+                : {})}
           />
         </div>
         {sortedFindings.length === 0 ? (

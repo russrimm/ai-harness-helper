@@ -128,6 +128,28 @@ require a plan upgrade or a public repository.
 
 ## P2 - Quality
 
+### P2.0 Decide how the bundled model lifecycle table stays current
+
+**Evidence:** `packages/core/src/models.ts` carries vendor deprecation dates
+transcribed from the OpenAI, Anthropic, and Google deprecation pages, stamped
+with `MODEL_DATA_VERIFIED_ON`. Nothing refreshes it. The design already fails
+safe — status is derived by comparing today against an announced shutdown date,
+and an unrecognized model is never flagged — so staleness costs coverage rather
+than correctness. It still decays.
+
+**Decision needed:** whether refreshing the table is a manual step at release
+time, a scheduled job that opens a pull request, or a runtime fetch. A runtime
+fetch would contradict the no-outbound-network guarantee in SECURITY.md, so it
+is the one option that cannot be chosen without revisiting that promise.
+
+**Acceptance criteria:**
+
+- A documented owner and cadence for refreshing the table.
+- The verified-on date is surfaced wherever the checker reports, so a user can
+  judge how stale it is. (Done: shown in the Models view.)
+- Table integrity stays enforced by tests, including that every recommended
+  replacement resolves to a model that is itself still alive.
+
 ### P2.1 Define reliability and performance budgets
 
 **Evidence:** a first scan of a real machine reads roughly 30 files in well

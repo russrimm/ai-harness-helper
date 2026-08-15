@@ -973,6 +973,57 @@
     @apply text-warning;
   }
 
+  /* ----- Effective configuration view ----- */
+
+  .effective-provider {
+    @apply mb-6;
+  }
+
+  .effective-list,
+  .model-list {
+    @apply m-0 flex list-none flex-col gap-3 p-0;
+  }
+
+  .effective-card,
+  .model-card {
+    @apply rounded-lg border border-border bg-surface p-3;
+  }
+
+  .effective-card-header,
+  .model-card-header {
+    @apply mb-2 flex flex-wrap items-center gap-2;
+  }
+
+  .effective-declarations,
+  .model-sites {
+    @apply m-0 flex list-none flex-col gap-2 p-0;
+  }
+
+  .effective-declaration {
+    @apply rounded-md border border-border bg-surface-muted p-2;
+  }
+
+  /* Dimming the declarations a tool never reads is what makes the winner
+     findable at a glance in a group of four otherwise identical rows. */
+  .effective-declaration.is-shadowed,
+  .effective-declaration.is-disabled {
+    @apply opacity-70;
+  }
+
+  .effective-declaration-header {
+    @apply flex flex-wrap items-center gap-2;
+  }
+
+  .effective-declaration-header a,
+  .model-sites a {
+    @apply break-all font-mono text-xs;
+  }
+
+  .effective-declaration p,
+  .model-sites li {
+    @apply m-0;
+  }
+
   /* ----- Search view ----- */
 
   .search-box {

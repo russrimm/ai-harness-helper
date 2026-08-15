@@ -36,6 +36,14 @@ const InstructionsView = lazy(async () => {
   const module = await import('./views/InstructionsView.js');
   return { default: module.InstructionsView };
 });
+const EffectiveView = lazy(async () => {
+  const module = await import('./views/EffectiveView.js');
+  return { default: module.EffectiveView };
+});
+const ModelsView = lazy(async () => {
+  const module = await import('./views/ModelsView.js');
+  return { default: module.ModelsView };
+});
 const SearchView = lazy(async () => {
   const module = await import('./views/SearchView.js');
   return { default: module.SearchView };
@@ -52,6 +60,8 @@ const KNOWN_BASES = [
   '/mcp',
   '/capabilities',
   '/instructions',
+  '/effective',
+  '/models',
   '/search',
   '/export',
   '/project-roots',
@@ -91,6 +101,8 @@ export function App(): ReactElement {
             {base === '/mcp' ? <McpView /> : null}
             {base === '/capabilities' ? <CapabilitiesView initialFileId={rest} /> : null}
             {base === '/instructions' ? <InstructionsView /> : null}
+            {base === '/effective' ? <EffectiveView /> : null}
+            {base === '/models' ? <ModelsView /> : null}
             {base === '/search' ? (
               <SearchView initialQuery={location.params.get('q') ?? ''} />
             ) : null}

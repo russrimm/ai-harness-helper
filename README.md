@@ -51,6 +51,12 @@ there is no telemetry, and the tool makes no outbound network requests at all.
   its tool allowlist, or rewrite its instructions, without hand-editing YAML.
   Front-matter keys this build does not model are preserved exactly where they
   sit, and every change is confirmed field by field before it is written.
+- **Effective configuration** — what each tool actually ends up using once
+  precedence is applied, per tool: which declaration wins, which ones are
+  shadowed by it, and whether a shadowed copy is merely redundant or genuinely
+  says something different.
+- **Models** — every model id pinned anywhere in your configuration, checked
+  against published vendor lifecycle dates.
 - **Search** — full-text across everything discovered, honoring redaction.
 - **Export** — the whole harness as JSON or a Markdown report, including the
   source map and duplicate flags. Metadata only, with credentials masked, so it
@@ -106,6 +112,49 @@ chain as the editor below, so it is refused in `--read-only` mode, backed up
 first, and written atomically. Credentials the server used are left wherever
 they already live — this tool never edits a credential store.
 
+### What actually wins
+
+Duplicates tell you two files declare the same thing. They do not tell you which
+one the tool obeys. The Effective view answers that, one tool at a time, because
+precedence only means anything inside a single tool — two tools both declaring a
+`github` server is not a disagreement.
+
+Two things resolve differently, so they are treated differently:
+
+- **Override** — MCP servers, agents, skills, prompts and commands. The nearest
+  declaration wins outright and the others are inert. Project beats user beats
+  machine.
+- **Merge** — instruction files and guardrails. Everything applies, so the
+  question is ordering rather than survival. Guardrails invert the direction:
+  machine-managed policy outranks user, which outranks project, because a rule a
+  project could switch off would not be a policy.
+
+A shadowed declaration is only called **contested** when its content actually
+differs from the winner. A byte-identical copy sitting under a losing scope is
+just redundant, and saying otherwise would bury the real conflicts.
+
+### Outdated models
+
+Every model id pinned anywhere — agent and skill front matter, chat modes,
+settings files, nested keys — is collected and checked against the vendors'
+published deprecation notices. A model whose shutdown date has passed is an
+error; one with an announced date still in the future is a warning, along with
+the date you have left and the vendor's own recommended replacement.
+
+Two rules keep this honest:
+
+- **An unrecognized model is never flagged.** Vendors ship faster than any
+  bundled table can track, and wrongly telling you a working model is dead is
+  far worse than staying quiet.
+- **Nothing is inferred from version numbers.** Status is computed by comparing
+  today's date against the shutdown date the vendor announced, so the table
+  stays correct as the calendar moves rather than as this package is republished.
+
+The lifecycle data is sourced from the OpenAI, Anthropic and Google deprecation
+pages, and every finding links back to the page it came from. The date it was
+last verified ships with the data and is shown in the Models view, so you can
+tell at a glance how stale the checker itself is.
+
 ## Usage
 
 ```bash
@@ -119,6 +168,10 @@ npx ai-harness-helper [options]
 | `--projects-only`       | Scan project folders without user or machine configuration.   |
 | `--read-only`           | Disable all editing for this session.                         |
 | `--no-open`             | Do not launch a browser.                                      |
+| `--json`                | Print the full report as JSON and exit. Implies `--no-open`.  |
+| `--report <format>`     | Print a report and exit: `json` or `markdown`.                |
+| `--check`               | Exit 2 when anything at error severity was found.             |
+| `--fail-on <level>`     | Threshold for `--check`: `error`, `warning`, or `info`.       |
 | `-h`, `--help`          | Show help.                                                    |
 | `-v`, `--version`       | Show the version.                                             |
 
@@ -135,6 +188,29 @@ configuration, add `--projects-only`. This mode requires at least one `--project
 ```bash
 npx ai-harness-helper --projects-only --project ~/code/my-app
 ```
+
+### Without the browser
+
+Any of `--json`, `--report`, `--check` or `--fail-on` runs the scan, prints the
+result, and exits without starting a server. Progress goes to stderr so stdout
+stays a clean document:
+
+```bash
+npx ai-harness-helper --json | jq '.summary'
+npx ai-harness-helper --report markdown > harness.md
+```
+
+`--check` turns the scan into a gate. It exits 2 when anything at error severity
+was found, 0 when nothing was, and 1 only if the command itself failed. Lower
+the bar with `--fail-on warning` to fail on conflicts and models with an
+announced shutdown as well:
+
+```bash
+npx ai-harness-helper --check --project . --projects-only
+```
+
+Editing is irrelevant in this mode, so nothing is written and no token is
+issued.
 
 ## Supported tools
 

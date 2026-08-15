@@ -13,6 +13,7 @@ import { readFile } from 'node:fs/promises';
 import { detectMcpOverlaps } from './overlap.js';
 import { fileDeletability } from './deletable.js';
 import { mapConcurrentBatches } from './concurrency.js';
+import { assessModel, collectModelReferences, isModelOutdated } from './models.js';
 import { parseContent } from './parsers.js';
 import {
   REDACTED_PLACEHOLDER,
@@ -20,6 +21,7 @@ import {
   isPlaceholderValue,
   isSecretKey,
 } from './redact.js';
+import type { ModelAssessment } from './models.js';
 import type { McpOverlapGroup } from './overlap.js';
 import type { DiscoveredFile, ScanResult } from './scanner.js';
 import type { ConfigScope, FileFormat, FileKind } from './types.js';
@@ -79,6 +81,15 @@ export interface DuplicateInfo {
   readonly siblingDisplayPaths: readonly string[];
   /** Files whose content is byte-identical, whatever they are named. */
   readonly identicalFileIds: readonly string[];
+  /**
+   * Hash of the declaring file, when it was readable.
+   *
+   * Carried so a consumer can tell a redundant copy from a differing one
+   * without re-reading the files. `identicalFileIds` deliberately excludes
+   * same-named siblings — it answers "what else is a byte-for-byte copy under
+   * a different name?" — so it cannot answer that question on its own.
+   */
+  readonly contentHash?: string;
 }
 
 /** One MCP server definition, as declared by a single file. */
@@ -164,9 +175,30 @@ export interface CapabilityEntry extends EntryProvenance {
   /** Tools the capability declares, when it declares any. */
   readonly tools?: readonly string[];
   readonly model?: string;
+  /** Lifecycle judgement for `model`, when one is declared. */
+  readonly modelStatus?: ModelAssessment;
   readonly projectRoot?: string;
   /** How this capability relates to others with the same name or content. */
   readonly duplicate: DuplicateInfo;
+}
+
+/**
+ * One place a model is pinned.
+ *
+ * Model pins hide in two very different shapes — front matter on an agent or
+ * chat mode, and a key buried in a settings file — so both are collected into
+ * one list. That is what makes "which of my configs still point at a dead
+ * model?" a single question with a single answer.
+ */
+export interface ModelUsageEntry extends EntryProvenance {
+  /** Dotted path to the value inside the file, or `model` for front matter. */
+  readonly path: string;
+  /** The reference exactly as written. */
+  readonly reference: string;
+  /** Name of the capability or instruction document, when the file is one. */
+  readonly entityName?: string;
+  readonly projectRoot?: string;
+  readonly assessment: ModelAssessment;
 }
 
 /** A permission rule, hook, or ignore file constraining agent behaviour. */
@@ -197,6 +229,7 @@ export type FindingCode =
   | 'instruction-duplicate'
   | 'instruction-conflict'
   | 'guardrail-duplicate'
+  | 'outdated-model'
   | 'plaintext-secret'
   | 'unparseable-file'
   | 'empty-file'
@@ -231,6 +264,12 @@ export interface HarnessSummary {
   readonly instructionCount: number;
   readonly capabilityCount: number;
   readonly guardrailCount: number;
+  /** Model pins found anywhere in the harness. */
+  readonly modelUsageCount: number;
+  /** Pins naming a model that is retired or has a shutdown announced. */
+  readonly outdatedModelCount: number;
+  /** Pins naming a model that is already shut down. */
+  readonly retiredModelCount: number;
   readonly findingCount: number;
   readonly errorCount: number;
   readonly warningCount: number;
@@ -252,6 +291,8 @@ export interface HarnessInventory {
   readonly instructions: readonly InstructionEntry[];
   readonly capabilities: readonly CapabilityEntry[];
   readonly guardrails: readonly GuardrailEntry[];
+  /** Every model pin found, whatever its lifecycle state. */
+  readonly modelUsage: readonly ModelUsageEntry[];
   readonly findings: readonly HealthFinding[];
   /** Parsed values keyed by file id, for callers that want the raw tree. */
   readonly parsedFileIds: readonly string[];
@@ -263,6 +304,11 @@ export type ContentLoader = (file: DiscoveredFile) => Promise<string | undefined
 export interface AggregateOptions {
   /** Overrides the default `fs.readFile` loader. */
   readonly loadContent?: ContentLoader;
+  /**
+   * Clock used to decide whether an announced model shutdown has happened yet.
+   * Injectable so model-staleness tests do not drift as the calendar moves.
+   */
+  readonly now?: Date;
 }
 
 /** Formats a tool parses strictly, where any syntax error breaks the file. */
@@ -310,11 +356,13 @@ export async function aggregate(
   options: AggregateOptions = {},
 ): Promise<HarnessInventory> {
   const load = options.loadContent ?? defaultLoader;
+  const now = options.now ?? new Date();
 
   const mcpDefinitions = new Map<string, McpDefinition[]>();
   const instructionDrafts: InstructionDraft[] = [];
   const capabilityDrafts: CapabilityDraft[] = [];
   const guardrailDrafts: GuardrailDraft[] = [];
+  const modelUsage: ModelUsageEntry[] = [];
   const findings: HealthFinding[] = [];
   const parsedFileIds: string[] = [];
   /** Content digests keyed by file id, used to tell a copy from a conflict. */
@@ -406,8 +454,13 @@ export async function aggregate(
     }
 
     if (CAPABILITY_KINDS.has(file.kind)) {
-      capabilityDrafts.push(buildCapability(file, parsed.frontmatter, parsed.body ?? text));
+      capabilityDrafts.push(buildCapability(file, parsed.frontmatter, parsed.body ?? text, now));
     }
+
+    // Runs over `parsed.value` because that is the front matter for a Markdown
+    // capability and the whole document for a settings file, so one walk covers
+    // an agent pinning a model and Aider pinning one in `~/.aider.conf.yml`.
+    modelUsage.push(...collectModelUsage(file, parsed.value, now));
 
     const guardrail = buildGuardrail(file, parsed.value, text);
     if (guardrail) guardrailDrafts.push(guardrail);
@@ -463,6 +516,7 @@ export async function aggregate(
   const mcpServers = buildMcpEntries(mcpDefinitions);
   const mcpOverlaps = detectMcpOverlaps(mcpServers);
   findings.push(...mcpFindings(mcpServers), ...overlapFindings(mcpOverlaps));
+  findings.push(...modelFindings(modelUsage));
 
   const instructions = attachDuplicates(
     instructionDrafts,
@@ -507,6 +561,12 @@ export async function aggregate(
     (a, b) => a.providerId.localeCompare(b.providerId) || a.name.localeCompare(b.name),
   );
   guardrails.sort((a, b) => a.displayPath.localeCompare(b.displayPath));
+  modelUsage.sort(
+    (a, b) =>
+      modelSeverityRank(b.assessment.status) - modelSeverityRank(a.assessment.status) ||
+      a.displayPath.localeCompare(b.displayPath) ||
+      a.path.localeCompare(b.path),
+  );
   findings.sort(
     (a, b) => severityRank(b.severity) - severityRank(a.severity) || a.id.localeCompare(b.id),
   );
@@ -524,6 +584,9 @@ export async function aggregate(
       instructionCount: instructions.length,
       capabilityCount: capabilities.length,
       guardrailCount: guardrails.length,
+      modelUsageCount: modelUsage.length,
+      outdatedModelCount: modelUsage.filter((entry) => isModelOutdated(entry.assessment)).length,
+      retiredModelCount: modelUsage.filter((entry) => entry.assessment.status === 'retired').length,
       findingCount: findings.length,
       errorCount: findings.filter((f) => f.severity === 'error').length,
       warningCount: findings.filter((f) => f.severity === 'warning').length,
@@ -537,6 +600,7 @@ export async function aggregate(
     instructions,
     capabilities,
     guardrails,
+    modelUsage,
     findings,
     parsedFileIds,
   };
@@ -646,6 +710,7 @@ function attachDuplicates<T extends DuplicateCandidate>(
         siblingFileIds: siblings.map((entry) => entry.fileId),
         siblingDisplayPaths: siblings.map((entry) => entry.displayPath),
         identicalFileIds: identical.map((entry) => entry.fileId),
+        ...(hash !== undefined ? { contentHash: hash } : {}),
       },
     };
   });
@@ -1193,6 +1258,7 @@ function buildCapability(
   file: DiscoveredFile,
   frontmatter: Record<string, unknown> | undefined,
   body: string,
+  now: Date,
 ): CapabilityDraft {
   const declaredName = frontmatter ? firstString(frontmatter, ['name', 'title']) : undefined;
   const description = frontmatter
@@ -1200,6 +1266,7 @@ function buildCapability(
     : undefined;
   const model = frontmatter ? firstString(frontmatter, ['model']) : undefined;
   const tools = frontmatter ? toolList(frontmatter['tools']) : [];
+  const modelStatus = model !== undefined ? assessModel(model, now) : undefined;
 
   return {
     ...provenanceOf(file),
@@ -1209,6 +1276,7 @@ function buildCapability(
     ...(description !== undefined ? { description } : {}),
     ...(tools.length > 0 ? { tools } : {}),
     ...(model !== undefined ? { model } : {}),
+    ...(modelStatus !== undefined ? { modelStatus } : {}),
   };
 }
 
@@ -1238,6 +1306,117 @@ function toolList(value: unknown): string[] {
       .filter((part) => part.length > 0);
   }
   return [];
+}
+
+/* -------------------------------------------------------------- Models -- */
+
+/**
+ * Collects every model pin in one parsed document.
+ *
+ * Only front matter and structured settings are walked. A model id mentioned in
+ * Markdown prose is documentation, not configuration, and flagging it would
+ * turn a correct instruction file into a false positive.
+ */
+function collectModelUsage(file: DiscoveredFile, value: unknown, now: Date): ModelUsageEntry[] {
+  const sites = collectModelReferences(value);
+  if (sites.length === 0) return [];
+
+  const entityName = isRecord(value) ? firstString(value, ['name', 'title']) : undefined;
+  const provenance = provenanceOf(file);
+
+  return sites.map((site) => ({
+    ...provenance,
+    ...(file.projectRoot !== undefined ? { projectRoot: file.projectRoot } : {}),
+    path: site.path,
+    reference: site.reference,
+    ...(entityName !== undefined ? { entityName } : {}),
+    assessment: assessModel(site.reference, now),
+  }));
+}
+
+/**
+ * Raises one finding per stale model, not per file.
+ *
+ * A model pinned in eight agents is one decision to revisit, so it reads as one
+ * row listing eight files rather than eight rows saying the same thing.
+ */
+function modelFindings(usage: readonly ModelUsageEntry[]): HealthFinding[] {
+  const groups = new Map<string, ModelUsageEntry[]>();
+  for (const entry of usage) {
+    if (!isModelOutdated(entry.assessment)) continue;
+    const key = entry.assessment.canonicalId ?? entry.assessment.normalized;
+    const bucket = groups.get(key);
+    if (bucket) bucket.push(entry);
+    else groups.set(key, [entry]);
+  }
+
+  const findings: HealthFinding[] = [];
+  for (const [key, entries] of groups) {
+    const first = entries[0];
+    if (!first) continue;
+    const { assessment } = first;
+    const retired = assessment.status === 'retired';
+    const where = entries.map((entry) => entry.displayPath);
+    const places = `${entries.length} place${entries.length === 1 ? '' : 's'}`;
+
+    findings.push({
+      id: `outdated-model:${key}`,
+      code: 'outdated-model',
+      severity: retired ? 'error' : 'warning',
+      title: retired
+        ? `${assessment.canonicalId ?? first.reference} has been retired`
+        : `${assessment.canonicalId ?? first.reference} is scheduled for shutdown`,
+      detail:
+        `${first.reference} is pinned in ${places}. ` +
+        (retired
+          ? `${assessment.vendor === undefined ? 'The vendor' : vendorName(assessment.vendor)} shut it down${
+              assessment.shutdownDate === undefined ? '' : ` on ${assessment.shutdownDate}`
+            }, so requests using it fail.`
+          : `${vendorName(assessment.vendor)} has announced a shutdown${
+              assessment.shutdownDate === undefined ? '' : ` on ${assessment.shutdownDate}`
+            }${
+              assessment.daysUntilShutdown === undefined
+                ? ''
+                : ` (${assessment.daysUntilShutdown} days away)`
+            }.`) +
+        (assessment.note === undefined ? '' : ` ${assessment.note}`),
+      fileIds: [...new Set(entries.map((entry) => entry.fileId))],
+      displayPaths: [...new Set(where)],
+      remediation:
+        assessment.replacement === undefined
+          ? 'Repoint these files at a currently supported model.'
+          : `Repoint these files at ${assessment.replacement}.`,
+    });
+  }
+
+  return findings;
+}
+
+function vendorName(vendor: ModelAssessment['vendor']): string {
+  switch (vendor) {
+    case 'openai':
+      return 'OpenAI';
+    case 'anthropic':
+      return 'Anthropic';
+    case 'google':
+      return 'Google';
+    default:
+      return 'The vendor';
+  }
+}
+
+/** Sorts retired pins above merely deprecated ones, and both above the rest. */
+function modelSeverityRank(status: ModelAssessment['status']): number {
+  switch (status) {
+    case 'retired':
+      return 3;
+    case 'deprecated':
+      return 2;
+    case 'active':
+      return 1;
+    default:
+      return 0;
+  }
 }
 
 /* ----------------------------------------------------------- Guardrails -- */
