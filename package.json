@@ -39,6 +39,13 @@
     "overrides": {
       "esbuild": "^0.28.1"
     },
+    "packageExtensions": {
+      "@fastify/static": {
+        "peerDependencies": {
+          "fastify": "^5.0.0"
+        }
+      }
+    },
     "onlyBuiltDependencies": [
       "esbuild"
     ]
