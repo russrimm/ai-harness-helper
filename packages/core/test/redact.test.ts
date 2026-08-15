@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   detectSecretValue,
+  findEmbeddedSecret,
   isSecretKey,
   maskValue,
   redactText,
@@ -153,6 +154,66 @@ describe('redactValue', () => {
     node['self'] = node;
     expect(() => redactValue(node)).not.toThrow();
   });
+
+  it('masks a credential glued to its flag with an equals sign', () => {
+    const { value, redactions } = redactValue({
+      args: ['--api-key=sk-proj-ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890', 'run'],
+    });
+    const redacted = value as { args: string[] };
+    expect(redacted.args[0]).not.toContain('sk-proj-ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890');
+    expect(redacted.args[0]).toBe('--api-key=••••••••');
+    expect(redacted.args[1]).toBe('run');
+    expect(redactions).toHaveLength(1);
+  });
+
+  it('masks a credential carried in a URL query string', () => {
+    const { value, redactions } = redactValue({
+      url: 'https://mcp.example.com/sse?api_key=sk-proj-ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890',
+    });
+    const redacted = value as { url: string };
+    expect(redacted.url).not.toContain('sk-proj-ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890');
+    expect(redactions).toHaveLength(1);
+  });
+});
+
+describe('findEmbeddedSecret', () => {
+  it('masks only the value half of a glued flag=value pair', () => {
+    const result = findEmbeddedSecret('--api-key=sk-proj-ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890');
+    expect(result?.masked).toBe('--api-key=••••••••');
+  });
+
+  it('masks a secret-shaped query parameter without touching the path', () => {
+    const result = findEmbeddedSecret(
+      'https://mcp.example.com/sse?api_key=sk-proj-ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890',
+    );
+    expect(result).toBeDefined();
+    expect(result?.masked).toContain('https://mcp.example.com/sse?');
+    expect(result?.masked).not.toContain('sk-proj-ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890');
+  });
+
+  it('masks a secret-named query parameter even when the value has no known shape', () => {
+    const result = findEmbeddedSecret('https://mcp.example.com/sse?token=hunter2opaquevalue');
+    expect(result).toBeDefined();
+    expect(result?.masked).not.toContain('hunter2opaquevalue');
+  });
+
+  it('masks userinfo credentials in a URL', () => {
+    const result = findEmbeddedSecret('https://user:hunter2opaquepassword@example.com/db');
+    expect(result).toBeDefined();
+    expect(result?.masked).not.toContain('hunter2opaquepassword');
+  });
+
+  it('leaves a non-secret flag=value pair untouched', () => {
+    expect(findEmbeddedSecret('--port=8080')).toBeUndefined();
+  });
+
+  it('leaves a placeholder value untouched', () => {
+    expect(findEmbeddedSecret('--api-key=${input:api-key}')).toBeUndefined();
+  });
+
+  it('leaves an ordinary URL without credentials untouched', () => {
+    expect(findEmbeddedSecret('https://example.com/path?limit=10')).toBeUndefined();
+  });
 });
 
 describe('resolveRedactionPath', () => {
@@ -199,5 +260,20 @@ describe('redactText', () => {
     const { value, redactions } = redactText(text);
     expect(value).toBe(text);
     expect(redactions).toEqual([]);
+  });
+
+  it('masks a credential glued to its flag with an equals sign', () => {
+    const text = '"args": ["--api-key=sk-proj-ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890", "run"]';
+    const { value, redactions } = redactText(text);
+    expect(value).not.toContain('sk-proj-ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890');
+    expect(redactions).toHaveLength(1);
+  });
+
+  it('masks a credential carried in a URL query string', () => {
+    const text =
+      '"url": "https://mcp.example.com/sse?api_key=sk-proj-ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890"';
+    const { value, redactions } = redactText(text);
+    expect(value).not.toContain('sk-proj-ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890');
+    expect(redactions).toHaveLength(1);
   });
 });
