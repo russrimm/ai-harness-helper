@@ -11,7 +11,7 @@ import { createServer as createNetServer } from 'node:net';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-import { HarnessService } from '@ai-harness-helper/core';
+import { HarnessService, type ReviewReport } from '@ai-harness-helper/core';
 
 import { createServer } from './server.js';
 
@@ -28,6 +28,8 @@ interface Options {
   projectsOnly: boolean;
   /** Emit a report to stdout instead of serving the UI. */
   report: 'json' | 'markdown' | undefined;
+  /** Print the quality review to stdout and exit. */
+  review: boolean;
   /**
    * Exit non-zero when a finding at or above this severity exists.
    * `undefined` means findings never affect the exit code.
@@ -51,6 +53,7 @@ Options
       --no-open          Do not launch a browser.
       --json             Print the full report as JSON and exit. Implies --no-open.
       --report <format>  Print a report and exit: json or markdown.
+      --review           Print the quality review and exit. Implies --no-open.
       --check            Exit 2 when anything at error severity was found.
       --fail-on <level>  Threshold for --check: error, warning, or info.
   -h, --help             Show this help.
@@ -60,6 +63,10 @@ Exit codes
   0  Ran successfully, nothing at or above the failure threshold.
   1  The command itself failed.
   2  Findings at or above the failure threshold exist (--check / --fail-on).
+
+--check and --fail-on weigh health findings and review issues together, so a
+skill with no description fails a build the same way an unparseable settings
+file does.
 
 The server binds 127.0.0.1 only and requires a token that is generated fresh
 on every run. Nothing is sent anywhere: there is no telemetry and no outbound
@@ -103,6 +110,7 @@ export function parseArgs(argv: readonly string[]): Options {
     projects: [],
     projectsOnly: false,
     report: undefined,
+    review: false,
     failOn: undefined,
     help: false,
     version: false,
@@ -146,6 +154,9 @@ export function parseArgs(argv: readonly string[]): Options {
         break;
       case '--json':
         options.report = 'json';
+        break;
+      case '--review':
+        options.review = true;
         break;
       case '--check':
         // `--check` on its own means "fail on anything serious". A separate
@@ -193,7 +204,9 @@ export function parseArgs(argv: readonly string[]): Options {
 
   // A report goes to stdout, so opening a browser would be noise, and a bare
   // --check has nothing to show a browser either.
-  if (options.report !== undefined || options.failOn !== undefined) options.open = false;
+  if (options.report !== undefined || options.failOn !== undefined || options.review) {
+    options.open = false;
+  }
 
   return options;
 }
@@ -266,6 +279,50 @@ async function readVersion(): Promise<string> {
   }
 }
 
+/**
+ * Renders the review for a terminal.
+ *
+ * Grouped by file rather than by rule, because the user fixes one file at a
+ * time; a list sorted by severity would have them jumping between documents.
+ */
+export function formatReview(report: ReviewReport): string {
+  const lines: string[] = [];
+  const { summary } = report;
+
+  lines.push(
+    '',
+    `  Harness review — ${summary.score}/100 (${summary.grade})`,
+    `  ${summary.issueCount} issue${summary.issueCount === 1 ? '' : 's'} ` +
+      `(${summary.errorCount} error, ${summary.warningCount} warning, ${summary.infoCount} info) ` +
+      `across ${summary.affectedFileCount} file${summary.affectedFileCount === 1 ? '' : 's'}.`,
+    `  ${summary.ruleCount} rules run against ${summary.reviewedSubjectCount} subjects.`,
+    '',
+  );
+
+  if (report.issues.length === 0) {
+    lines.push('  Nothing to fix.', '');
+    return lines.join('\n');
+  }
+
+  const byFile = new Map<string, typeof report.issues>();
+  for (const issue of report.issues) {
+    const existing = byFile.get(issue.displayPath);
+    byFile.set(issue.displayPath, existing ? [...existing, issue] : [issue]);
+  }
+
+  for (const [displayPath, issues] of byFile) {
+    lines.push(`  ${displayPath}`);
+    for (const issue of issues) {
+      lines.push(`    [${issue.severity}] ${issue.title}`);
+      lines.push(`      ${issue.detail}`);
+      lines.push(`      Fix: ${issue.remediation}`);
+    }
+    lines.push('');
+  }
+
+  return lines.join('\n');
+}
+
 export async function main(argv: readonly string[] = process.argv.slice(2)): Promise<void> {
   let options: Options;
   try {
@@ -291,7 +348,7 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
     readOnly: options.readOnly,
   });
 
-  const headless = options.report !== undefined || options.failOn !== undefined;
+  const headless = options.report !== undefined || options.failOn !== undefined || options.review;
 
   // Progress goes to stderr in headless mode so `--json` can be piped straight
   // into jq without the caller having to strip a banner off the front.
@@ -311,26 +368,36 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
       process.stdout.write(await service.exportMarkdown());
     }
 
+    if (options.review && options.report === undefined) {
+      process.stdout.write(formatReview(await service.getReview()));
+    }
+
     if (options.failOn !== undefined) {
       const threshold = SEVERITY_RANK[options.failOn];
-      const failing = inventory.findings.filter(
-        (finding) => SEVERITY_RANK[finding.severity] >= threshold,
-      );
+      // Health findings and review issues answer the same question — "is
+      // something wrong here?" — so a gate that weighed only one of them would
+      // pass a harness whose skills are all unroutable.
+      const review = await service.getReview();
+      const gated: { severity: 'error' | 'warning' | 'info'; title: string; detail: string }[] = [
+        ...inventory.findings,
+        ...review.issues,
+      ].filter((entry) => SEVERITY_RANK[entry.severity] >= threshold);
 
-      if (options.report === undefined) {
+      if (options.report === undefined && !options.review) {
         progress.write(
           `\n  ${result.files.length} files across ${result.detectedProviders.length} tools` +
             ` — ${inventory.summary.findingCount} findings` +
-            ` (${inventory.summary.errorCount} error, ${inventory.summary.warningCount} warning).\n`,
+            ` (${inventory.summary.errorCount} error, ${inventory.summary.warningCount} warning),` +
+            ` ${review.summary.issueCount} review issues, score ${review.summary.score}/100.\n`,
         );
-        for (const finding of failing) {
-          process.stdout.write(`${finding.severity}: ${finding.title} — ${finding.detail}\n`);
+        for (const entry of gated) {
+          process.stdout.write(`${entry.severity}: ${entry.title} — ${entry.detail}\n`);
         }
       }
 
-      if (failing.length > 0) {
+      if (gated.length > 0) {
         progress.write(
-          `\n  ${failing.length} finding${failing.length === 1 ? '' : 's'} at or above` +
+          `\n  ${gated.length} item${gated.length === 1 ? '' : 's'} at or above` +
             ` "${options.failOn}".\n`,
         );
         process.exitCode = 2;

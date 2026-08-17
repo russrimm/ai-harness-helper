@@ -68,7 +68,7 @@ export interface ScanProblem {
   providerId?: string;
   locationId?: string;
   message: string;
-  code: 'permission-denied' | 'read-error' | 'too-large';
+  code: 'permission-denied' | 'read-error' | 'too-large' | 'too-many';
 }
 
 export interface ProjectRootInfo {
@@ -171,6 +171,7 @@ export interface McpDefinition extends EntryProvenance {
   url?: string;
   reference?: string;
   envKeys: string[];
+  envVarRefs: string[];
   hasInlineSecret: boolean;
   disabled: boolean;
   signature: string;
@@ -399,7 +400,137 @@ export interface OverviewResponse {
   projectRoots: ProjectRootInfo[];
   detectedProviders: string[];
   missingCount: number;
+  contextBudget: {
+    alwaysBytes: number;
+    alwaysTokens: number;
+    bytesPerToken: number;
+  };
   tree: ProviderGroup[];
+}
+
+/* ------------------------------------------------------------- Review -- */
+
+export type ReviewCategory = 'capability' | 'instruction' | 'mcp' | 'guardrail' | 'freshness';
+
+export type ReviewSeverity = 'info' | 'warning' | 'error';
+
+export type ReviewRuleId =
+  | 'capability-missing-description'
+  | 'capability-description-too-long'
+  | 'capability-description-too-terse'
+  | 'capability-missing-frontmatter'
+  | 'capability-name-mismatch'
+  | 'capability-empty-body'
+  | 'capability-oversized'
+  | 'capability-unknown-tool'
+  | 'instruction-missing-applyto'
+  | 'instruction-oversized'
+  | 'instruction-no-guidance'
+  | 'broken-reference'
+  | 'stale-date'
+  | 'renamed-product'
+  | 'model-in-prose'
+  | 'mcp-env-var-unset'
+  | 'mcp-command-missing'
+  | 'mcp-unpinned-package'
+  | 'mcp-disabled'
+  | 'mcp-insecure-endpoint'
+  | 'guardrail-overbroad-allow'
+  | 'guardrail-allow-shadows-deny'
+  | 'guardrail-empty';
+
+export interface ReviewRuleMeta {
+  id: ReviewRuleId;
+  title: string;
+  category: ReviewCategory;
+  severity: ReviewSeverity;
+  rationale: string;
+}
+
+export interface ReviewIssue {
+  id: string;
+  ruleId: ReviewRuleId;
+  category: ReviewCategory;
+  severity: ReviewSeverity;
+  subject: string;
+  title: string;
+  detail: string;
+  remediation: string;
+  fileId: string;
+  displayPath: string;
+  directory: string;
+  providerId: string;
+  providerName: string;
+  scope: ConfigScope;
+  projectRoot?: string;
+  evidence?: string;
+}
+
+export interface ReviewSummary {
+  issueCount: number;
+  errorCount: number;
+  warningCount: number;
+  infoCount: number;
+  affectedFileCount: number;
+  reviewedSubjectCount: number;
+  ruleCount: number;
+  score: number;
+  grade: 'A' | 'B' | 'C' | 'D' | 'F';
+  byCategory: Record<ReviewCategory, number>;
+}
+
+export interface ReviewReport {
+  generatedAt: string;
+  summary: ReviewSummary;
+  issues: ReviewIssue[];
+  rules: ReviewRuleMeta[];
+}
+
+/* ------------------------------------------------------ Context budget -- */
+
+export type LoadTiming = 'always' | 'conditional' | 'on-demand';
+
+export interface BudgetContributor {
+  fileId: string;
+  displayPath: string;
+  directory: string;
+  providerId: string;
+  providerName: string;
+  scope: ConfigScope;
+  projectRoot?: string;
+  kind: FileKind;
+  label: string;
+  timing: LoadTiming;
+  alwaysBytes: number;
+  situationalBytes: number;
+  fileBytes: number;
+  appliesTo?: string;
+}
+
+export interface ProviderBudget {
+  providerId: string;
+  providerName: string;
+  alwaysBytes: number;
+  alwaysTokens: number;
+  conditionalBytes: number;
+  onDemandBytes: number;
+  mcpServerCount: number;
+  contributors: BudgetContributor[];
+  alwaysByScope: Record<ConfigScope, number>;
+}
+
+export interface ContextBudgetReport {
+  generatedAt: string;
+  providers: ProviderBudget[];
+  totals: {
+    alwaysBytes: number;
+    alwaysTokens: number;
+    conditionalBytes: number;
+    onDemandBytes: number;
+    contributorCount: number;
+  };
+  bytesPerToken: number;
+  heaviest?: BudgetContributor;
 }
 
 export interface SearchHit {

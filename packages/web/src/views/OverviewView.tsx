@@ -4,12 +4,17 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import type { ReactElement } from 'react';
-import { getOverview, postScan } from '../api/client.js';
+import { getOverview, getReview, postScan } from '../api/client.js';
 import { Badge } from '../components/Badge.js';
 import { StatCard } from '../components/StatCard.js';
 import { EmptyState, ErrorState, LoadingState } from '../components/StatusStates.js';
 import { describeError, isRetryable } from '../hooks/useAsync.js';
-import type { FindingSeverity, HealthFinding, OverviewResponse } from '../api/types.js';
+import type {
+  FindingSeverity,
+  HealthFinding,
+  OverviewResponse,
+  ReviewSummary,
+} from '../api/types.js';
 
 const SEVERITY_ORDER: Record<FindingSeverity, number> = { error: 0, warning: 1, info: 2 };
 const SEVERITY_VARIANT: Record<FindingSeverity, 'error' | 'warning' | 'info'> = {
@@ -43,6 +48,16 @@ export function OverviewView(): ReactElement {
   const [scanning, setScanning] = useState(false);
   const [announcement, setAnnouncement] = useState('');
   const [severityFilter, setSeverityFilter] = useState<Set<FindingSeverity>>(new Set());
+  /**
+   * The review is fetched separately and after the first paint.
+   *
+   * It is the only read path that opens file contents a second time, so
+   * folding it into `/api/overview` would make the dashboard — the first thing
+   * anyone sees — measurably slower for a number that is fine to arrive a beat
+   * later.
+   */
+  const [review, setReview] = useState<ReviewSummary | undefined>(undefined);
+  const [reviewFailed, setReviewFailed] = useState(false);
 
   const load = useCallback(async (): Promise<OverviewResponse | undefined> => {
     setLoading(true);
@@ -61,9 +76,25 @@ export function OverviewView(): ReactElement {
     }
   }, []);
 
+  const loadReview = useCallback(async (): Promise<void> => {
+    setReviewFailed(false);
+    try {
+      const report = await getReview();
+      setReview(report.summary);
+    } catch {
+      // A failed review must not take the dashboard down with it; the card
+      // simply offers a link to the view, which reports the error properly.
+      setReviewFailed(true);
+    }
+  }, []);
+
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    void loadReview();
+  }, [loadReview]);
 
   const handleRescan = async (): Promise<void> => {
     setScanning(true);
@@ -71,6 +102,8 @@ export function OverviewView(): ReactElement {
     try {
       await postScan();
       const next = await load();
+      setReview(undefined);
+      void loadReview();
       if (next) {
         const files = plural(next.summary.fileCount, 'config file');
         const findings = plural(next.summary.findingCount, 'finding');
@@ -241,6 +274,30 @@ export function OverviewView(): ReactElement {
       <section aria-labelledby="findings-heading">
         <h3 id="findings-heading">Health</h3>
         <div className="stat-grid">
+          <StatCard
+            label="Review score"
+            value={review ? `${review.score}` : reviewFailed ? '—' : '…'}
+            hint={
+              review
+                ? `Grade ${review.grade} · ${review.issueCount} issue${review.issueCount === 1 ? '' : 's'} from ${review.ruleCount} rules`
+                : reviewFailed
+                  ? 'The review could not be run'
+                  : 'Reviewing your capabilities and instructions…'
+            }
+            href="#/review"
+            {...(review && review.errorCount > 0
+              ? { tone: 'error' as const }
+              : review && review.warningCount > 0
+                ? { tone: 'warning' as const }
+                : {})}
+          />
+          <StatCard
+            label="Every-request context"
+            value={formatBytes(data.contextBudget.alwaysBytes)}
+            hint={`~${data.contextBudget.alwaysTokens.toLocaleString()} tokens read before every question`}
+            href="#/budget"
+            {...(data.contextBudget.alwaysBytes > 32 * 1024 ? { tone: 'warning' as const } : {})}
+          />
           <StatCard
             label="Duplicates"
             value={summary.duplicateCount}

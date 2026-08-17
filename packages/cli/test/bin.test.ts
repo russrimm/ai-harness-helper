@@ -1,7 +1,9 @@
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-import { parseArgs } from '../src/bin.js';
+import type { ReviewIssue } from '@ai-harness-helper/core';
+
+import { formatReview, parseArgs } from '../src/bin.js';
 
 describe('parseArgs', () => {
   it('defaults to opening a browser with editing enabled', () => {
@@ -15,6 +17,7 @@ describe('parseArgs', () => {
       help: false,
       version: false,
       report: undefined,
+      review: false,
       failOn: undefined,
     });
   });
@@ -119,12 +122,99 @@ describe('parseArgs - headless reporting', () => {
 
   it('never opens a browser when the output is going to stdout', () => {
     // stdout is the report, so a browser would only be noise.
-    for (const args of [['--json'], ['--report=markdown'], ['--check'], ['--fail-on', 'info']]) {
+    for (const args of [
+      ['--json'],
+      ['--report=markdown'],
+      ['--check'],
+      ['--fail-on', 'info'],
+      ['--review'],
+    ]) {
       expect(parseArgs(args).open).toBe(false);
     }
+  });
+
+  it('treats --review as a headless request for the quality review', () => {
+    expect(parseArgs(['--review']).review).toBe(true);
+    expect(parseArgs(['--review']).report).toBeUndefined();
   });
 
   it('still serves the UI when no headless flag is present', () => {
     expect(parseArgs(['--read-only']).open).toBe(true);
   });
 });
+
+describe('formatReview', () => {
+  it('leads with the score and groups issues under the file they belong to', () => {
+    const text = formatReview({
+      generatedAt: '2026-08-16T00:00:00.000Z',
+      rules: [],
+      summary: {
+        issueCount: 2,
+        errorCount: 1,
+        warningCount: 1,
+        infoCount: 0,
+        affectedFileCount: 1,
+        reviewedSubjectCount: 5,
+        ruleCount: 23,
+        score: 92,
+        grade: 'A',
+        byCategory: { capability: 2, instruction: 0, mcp: 0, guardrail: 0, freshness: 0 },
+      },
+      issues: [
+        issue('capability-missing-description', 'error', 'reviewer has no description'),
+        issue('capability-empty-body', 'warning', 'reviewer gives no instructions'),
+      ],
+    });
+
+    expect(text).toContain('92/100 (A)');
+    expect(text).toContain('~/.claude/agents/reviewer.md');
+    // One heading per file, however many issues that file produced.
+    expect(text.split('~/.claude/agents/reviewer.md').length - 1).toBe(1);
+    expect(text).toContain('Fix: Do the thing.');
+  });
+
+  it('says so plainly when nothing fired', () => {
+    const text = formatReview({
+      generatedAt: '2026-08-16T00:00:00.000Z',
+      rules: [],
+      issues: [],
+      summary: {
+        issueCount: 0,
+        errorCount: 0,
+        warningCount: 0,
+        infoCount: 0,
+        affectedFileCount: 0,
+        reviewedSubjectCount: 5,
+        ruleCount: 23,
+        score: 100,
+        grade: 'A',
+        byCategory: { capability: 0, instruction: 0, mcp: 0, guardrail: 0, freshness: 0 },
+      },
+    });
+
+    expect(text).toContain('Nothing to fix.');
+  });
+});
+
+function issue(
+  ruleId: ReviewIssue['ruleId'],
+  severity: ReviewIssue['severity'],
+  title: string,
+): ReviewIssue {
+  return {
+    id: `${ruleId}:file`,
+    ruleId,
+    category: 'capability',
+    severity,
+    subject: 'reviewer',
+    title,
+    detail: 'Detail text.',
+    remediation: 'Do the thing.',
+    fileId: 'file',
+    displayPath: '~/.claude/agents/reviewer.md',
+    directory: '~/.claude/agents',
+    providerId: 'claude-code',
+    providerName: 'Claude Code',
+    scope: 'user',
+  };
+}

@@ -10,6 +10,8 @@ import { readFile, stat } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, resolve, sep } from 'node:path';
 
 import { aggregate, type HarnessInventory } from './aggregate.js';
+import { reviewHarness, type ReviewReport } from './review.js';
+import { computeContextBudget, type ContextBudgetReport } from './budget.js';
 import {
   applyCapabilityEdits,
   isCapabilityFormat,
@@ -376,6 +378,15 @@ export class HarnessService {
   #projectRoots: string[];
   #scan: ScanResult | undefined;
   #inventory: HarnessInventory | undefined;
+  /**
+   * Last review, invalidated on every refresh.
+   *
+   * Cached separately from the inventory and computed lazily because the
+   * review is the only part of the product that re-reads file contents, and
+   * most sessions never open it. Paying for it on every scan would slow the
+   * first paint for everyone to benefit the few.
+   */
+  #review: ReviewReport | undefined;
   /** Absolute paths the scan discovered, used as the authorization set. */
   #authorized = new Set<string>();
 
@@ -405,6 +416,7 @@ export class HarnessService {
     });
     this.#scan = result;
     this.#inventory = await aggregate(result);
+    this.#review = undefined;
     this.#authorized = new Set(result.files.map((file) => normalizeKey(file.path)));
     return result;
   }
@@ -429,6 +441,31 @@ export class HarnessService {
    */
   async getEffective(): Promise<EffectiveConfig> {
     return resolveEffective(await this.getInventory());
+  }
+
+  /**
+   * Quality review of every capability, instruction, server, and guardrail.
+   *
+   * Cached until the next refresh. This is the one read path that touches
+   * file contents a second time, so recomputing it per request would turn a
+   * page refresh into a full re-read of every document on the machine.
+   */
+  async getReview(): Promise<ReviewReport> {
+    if (this.#review) return this.#review;
+    const [result, inventory] = [await this.getScan(), await this.getInventory()];
+    const report = await reviewHarness(result, inventory);
+    this.#review = report;
+    return report;
+  }
+
+  /**
+   * What the harness costs in context on every request.
+   *
+   * Derived rather than cached: every input already sits on the scan and the
+   * inventory, so this is arithmetic over data that is in memory anyway.
+   */
+  async getContextBudget(): Promise<ContextBudgetReport> {
+    return computeContextBudget(await this.getScan(), await this.getInventory());
   }
 
   /**
@@ -1245,6 +1282,8 @@ export class HarnessService {
     const result = await this.getScan();
     const inventory = await this.getInventory();
     const sources = await this.getSources();
+    const review = await this.getReview();
+    const budget = await this.getContextBudget();
     return {
       generatedAt: new Date().toISOString(),
       platform: result.platform,
@@ -1289,6 +1328,12 @@ export class HarnessService {
       guardrails: inventory.guardrails,
       modelUsage: inventory.modelUsage,
       findings: inventory.findings,
+      review: {
+        summary: review.summary,
+        issues: review.issues,
+        rules: review.rules,
+      },
+      contextBudget: budget,
       missing: result.missing.length,
       problems: result.problems,
     };
@@ -1299,6 +1344,8 @@ export class HarnessService {
     const result = await this.getScan();
     const inventory = await this.getInventory();
     const sources = await this.getSources();
+    const review = await this.getReview();
+    const budget = await this.getContextBudget();
     const lines: string[] = [];
 
     lines.push('# Agentic harness report', '');
@@ -1309,7 +1356,8 @@ export class HarnessService {
         `**${inventory.summary.mcpServerCount}** MCP servers · ` +
         `**${inventory.summary.duplicateCount}** duplicates ` +
         `(**${inventory.summary.conflictCount}** conflicting) · ` +
-        `**${inventory.summary.findingCount}** findings`,
+        `**${inventory.summary.findingCount}** findings · ` +
+        `review score **${review.summary.score}/100** (${review.summary.grade})`,
       '',
     );
 
@@ -1397,6 +1445,47 @@ export class HarnessService {
           '',
         );
       }
+    }
+
+    if (review.issues.length > 0) {
+      lines.push('## Review', '');
+      lines.push(
+        `${review.summary.issueCount} issues across ${review.summary.affectedFileCount} files, ` +
+          `from ${review.summary.ruleCount} rules run against ${review.summary.reviewedSubjectCount} subjects. ` +
+          `Score ${review.summary.score}/100 (${review.summary.grade}).`,
+        '',
+      );
+      lines.push('| Severity | Rule | Subject | Issue | File |');
+      lines.push('| --- | --- | --- | --- | --- |');
+      for (const issue of review.issues) {
+        lines.push(
+          `| ${issue.severity} | ${issue.ruleId} | ${issue.subject} | ` +
+            `${escapeCell(issue.detail)} | ${issue.displayPath} |`,
+        );
+      }
+      lines.push('');
+    }
+
+    if (budget.providers.length > 0) {
+      lines.push('## Context budget', '');
+      lines.push(
+        `Roughly **${budget.totals.alwaysTokens.toLocaleString()}** estimated tokens ` +
+          `(${formatByteSize(budget.totals.alwaysBytes)}) load on every request across all tools, ` +
+          `at ${budget.bytesPerToken} bytes per token. MCP tool schemas are additional and cannot ` +
+          'be measured without launching each server.',
+        '',
+      );
+      lines.push('| Tool | Always | Est. tokens | Conditional | On demand | MCP servers |');
+      lines.push('| --- | --- | --- | --- | --- | --- |');
+      for (const provider of budget.providers) {
+        lines.push(
+          `| ${provider.providerName} | ${formatByteSize(provider.alwaysBytes)} | ` +
+            `${provider.alwaysTokens.toLocaleString()} | ` +
+            `${formatByteSize(provider.conditionalBytes)} | ` +
+            `${formatByteSize(provider.onDemandBytes)} | ${provider.mcpServerCount} |`,
+        );
+      }
+      lines.push('');
     }
 
     lines.push('## Sources', '');
@@ -1513,6 +1602,14 @@ function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+/** Alias used by the report writer, where `formatBytes` reads ambiguously. */
+const formatByteSize = formatBytes;
+
+/** Makes a sentence safe to drop into a Markdown table cell. */
+function escapeCell(value: string): string {
+  return value.replace(/\|/g, '\\|').replace(/\r?\n/g, ' ');
 }
 
 function describe(error: unknown): string {

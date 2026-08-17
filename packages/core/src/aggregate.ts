@@ -121,6 +121,15 @@ export interface McpDefinition {
   readonly reference?: string;
   /** Environment variable names only — values are never surfaced here. */
   readonly envKeys: readonly string[];
+  /**
+   * Names of environment variables the declaration expands, e.g. the `TOKEN`
+   * in `"env": { "API_KEY": "${TOKEN}" }`.
+   *
+   * Distinct from `envKeys`, which names what the definition *sets*. This
+   * names what it *depends on*, which is what makes "this server was never
+   * going to start" answerable without launching it. Names only, never values.
+   */
+  readonly envVarRefs: readonly string[];
   /** True when the definition embeds a credential-looking literal. */
   readonly hasInlineSecret: boolean;
   /** True when the tool's own config marks the server disabled. */
@@ -963,10 +972,51 @@ function buildDefinition(
     ...(url !== undefined ? { url } : {}),
     ...(reference !== undefined ? { reference } : {}),
     envKeys,
+    envVarRefs: collectEnvVarRefs(raw),
     hasInlineSecret,
     disabled,
     signature: signatureOf(transport, command, args, url, reference),
   };
+}
+
+/**
+ * Environment variables the declaration expands, by name.
+ *
+ * Walks every string in the raw definition — `env` values, `args`, the URL,
+ * headers — because a tool may thread a credential through any of them. Only
+ * the variable *names* are collected; the surrounding value is never returned,
+ * so a definition holding `"Bearer ${GH_TOKEN}"` contributes `GH_TOKEN` and
+ * nothing else.
+ *
+ * `${VAR}`, `${env:VAR}`, and `$VAR` are all recognized. A bare `$VAR` is
+ * accepted only in screaming snake case, since lowercase `$path` in a Windows
+ * argument is far more likely to be a literal than a variable.
+ */
+function collectEnvVarRefs(raw: Record<string, unknown>): readonly string[] {
+  const names = new Set<string>();
+
+  const scan = (value: unknown, depth: number): void => {
+    if (depth > 6) return;
+    if (typeof value === 'string') {
+      for (const match of value.matchAll(/\$\{(?:env:)?([A-Za-z_][A-Za-z0-9_]*)\}/g)) {
+        if (match[1]) names.add(match[1]);
+      }
+      for (const match of value.matchAll(/(?<![\w${])\$([A-Z][A-Z0-9_]{2,})\b/g)) {
+        if (match[1]) names.add(match[1]);
+      }
+      return;
+    }
+    if (Array.isArray(value)) {
+      for (const item of value) scan(item, depth + 1);
+      return;
+    }
+    if (isRecord(value)) {
+      for (const item of Object.values(value)) scan(item, depth + 1);
+    }
+  };
+
+  scan(raw, 0);
+  return [...names].sort();
 }
 
 function resolveTransport(

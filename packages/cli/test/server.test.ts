@@ -223,6 +223,71 @@ describe('read routes', () => {
     expect(response.statusCode).toBe(401);
   });
 
+  it('returns a review with a score, issues, and the rules that ran', async () => {
+    const body = (await call({ url: '/api/review' })).json() as {
+      summary: { score: number; ruleCount: number; reviewedSubjectCount: number };
+      issues: { ruleId: string; remediation: string; fileId: string }[];
+      rules: { id: string; rationale: string }[];
+    };
+
+    expect(body.rules.length).toBeGreaterThan(0);
+    expect(body.summary.ruleCount).toBe(body.rules.length);
+    expect(body.summary.reviewedSubjectCount).toBeGreaterThan(0);
+    expect(body.summary.score).toBeGreaterThanOrEqual(0);
+    expect(body.summary.score).toBeLessThanOrEqual(100);
+    // Every issue must be actionable and traceable to a file, or it is noise.
+    for (const issue of body.issues) {
+      expect(issue.remediation.length).toBeGreaterThan(0);
+      expect(issue.fileId.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('requires a token for the review', async () => {
+    const response = await call({ url: '/api/review', token: null });
+    expect(response.statusCode).toBe(401);
+  });
+
+  it('returns a context budget split by when the bytes are loaded', async () => {
+    const body = (await call({ url: '/api/budget' })).json() as {
+      providers: { providerId: string; alwaysBytes: number; contributors: unknown[] }[];
+      totals: { alwaysBytes: number; alwaysTokens: number };
+      bytesPerToken: number;
+    };
+
+    expect(body.bytesPerToken).toBeGreaterThan(0);
+    expect(body.providers.length).toBeGreaterThan(0);
+    expect(body.totals.alwaysBytes).toBeGreaterThan(0);
+    expect(body.totals.alwaysTokens).toBeGreaterThan(0);
+  });
+
+  it('carries the always-loaded context weight on the overview', async () => {
+    const body = (await call({ url: '/api/overview' })).json() as {
+      contextBudget: { alwaysBytes: number; alwaysTokens: number; bytesPerToken: number };
+    };
+
+    expect(body.contextBudget.alwaysBytes).toBeGreaterThan(0);
+    expect(body.contextBudget.bytesPerToken).toBeGreaterThan(0);
+  });
+
+  it('recomputes the review after a rescan rather than serving a stale one', async () => {
+    const before = (
+      (await call({ url: '/api/review' })).json() as {
+        summary: { reviewedSubjectCount: number };
+      }
+    ).summary.reviewedSubjectCount;
+
+    fixture.write('.claude/agents/undescribed.md', '---\nname: undescribed\n---\n\nDo the work.\n');
+    await call({ method: 'POST', url: '/api/scan' });
+
+    const after = (await call({ url: '/api/review' })).json() as {
+      summary: { reviewedSubjectCount: number };
+      issues: { ruleId: string }[];
+    };
+
+    expect(after.summary.reviewedSubjectCount).toBeGreaterThan(before);
+    expect(after.issues.map((issue) => issue.ruleId)).toContain('capability-missing-description');
+  });
+
   it('masks secrets in a file by default', async () => {
     const id = await firstFileId('.claude/settings.json');
     const body = (await call({ url: `/api/files/${id}` })).json() as {

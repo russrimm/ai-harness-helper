@@ -29,6 +29,17 @@ there is no telemetry, and the tool makes no outbound network requests at all.
   they live in, and health findings: duplicates and conflicts of every kind,
   plaintext secrets, empty or unparseable files, and deprecated config
   locations.
+- **Review** — the quality pass. Everything above tells you what your harness
+  _contains_; this tells you what it gets _wrong_. A skill with no description
+  the model will never select, an instruction file linking a document that was
+  deleted six months ago, an MCP server whose API-key variable was never
+  exported, a permission rule that pre-approves every command in its class.
+  Every issue names its fix, and a single score makes "did that edit help?"
+  answerable at a glance.
+- **Context budget** — what the harness costs you on every request, split by
+  when the bytes are actually paid: always, only when a glob matches, or only
+  when a capability is selected. This is the view that makes streamlining
+  possible, because nobody deletes an instruction file they think is free.
 - **Sources** — the "where does this come from?" map: every supported tool,
   every location it reads, the directory each one resolves to on this machine,
   and whether anything is actually there. Locations that were checked and found
@@ -59,8 +70,12 @@ there is no telemetry, and the tool makes no outbound network requests at all.
   against published vendor lifecycle dates.
 - **Search** — full-text across everything discovered, honoring redaction.
 - **Export** — the whole harness as JSON or a Markdown report, including the
-  source map and duplicate flags. Metadata only, with credentials masked, so it
-  is safe to attach to a bug report.
+  source map, duplicate flags, review issues, and context budget. Metadata
+  only, with credentials masked, so it is safe to attach to a bug report.
+
+Press <kbd>Ctrl</kbd>+<kbd>K</kbd> (<kbd>⌘</kbd>+<kbd>K</kbd> on macOS)
+anywhere in the UI to jump straight to a view, a file, a skill, or a server
+without navigating to it.
 
 You can also **edit** any config file in place, with backups, validation, and
 conflict detection, and **delete** the ones that hold a single entry.
@@ -155,6 +170,75 @@ pages, and every finding links back to the page it came from. The date it was
 last verified ships with the data and is shown in the Models view, so you can
 tell at a glance how stale the checker itself is.
 
+### Reviewing skills, agents and instructions
+
+Duplicates, conflicts and model pins are all judgements about _structure_. They
+say nothing about whether an individual skill is any good. A skill with no
+description parses cleanly, duplicates nothing, pins no dead model, and is
+still invisible to the model that was supposed to choose it.
+
+The Review view runs 23 rules over every capability, instruction file, MCP
+server and guardrail, and reports what it finds grouped by the file you would
+open to fix it:
+
+| Area                | What is checked                                                                                                                                                                                                                                                                                                                                          |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Skills & agents** | Missing description; a description past the 1024-character cap, where the end is silently truncated; front matter that opens but never closes; a declared `name` that disagrees with the file or folder a tool invokes it by; metadata with no instructions; a body large enough to matter; a `tools:` allowlist naming an MCP server nothing configures |
+| **Instructions**    | An always-on file large enough to be worth splitting; a `*.instructions.md` with no `applyTo`, so it either never applies or always does depending on the tool; a file that is headings only                                                                                                                                                             |
+| **Freshness**       | A Markdown link to a file that no longer exists; a self-declared "last verified" date more than a year old; a retired product name; a retired model id named in prose, where the model checker cannot see it                                                                                                                                             |
+| **MCP servers**     | A `${VAR}` the definition expands that this machine does not export — the usual reason a server starts and then fails at first use; an absolute command path that is not there; an unpinned `npx` package; a plain-HTTP non-loopback endpoint; a server declared but disabled                                                                            |
+| **Guardrails**      | An allow rule that pre-approves a whole class, like `Bash(*)`; the same pattern in both allow and deny, where one of the two is dead; a permissions file with no rules at all                                                                                                                                                                            |
+
+The same constraints that govern the rest of the tool govern the rules:
+
+- **Local only.** Nothing is fetched, nothing is executed, and no model is
+  called. Every judgement comes from bytes already on disk plus the environment
+  this process was started in — and for environment variables, only whether a
+  name is set, never its value.
+- **Precision over recall.** A false positive teaches you to ignore the whole
+  view, which costs more than the finding was worth. Broken-link checking looks
+  at Markdown link targets and deliberately ignores backticked paths, because
+  those are usually illustrative. Prose model ids are only flagged once the
+  vendor has actually shut the model down. Product renames are a short curated
+  list of announced renames, matched on word boundaries, reported at `info`.
+- **Every issue names its fix.** A finding you cannot act on is noise wearing a
+  severity badge.
+
+The score is a weighted deduction from 100 — errors cost more than warnings,
+warnings more than suggestions — and exists to make one question answerable:
+did that edit help? It is not a measurement, and the view says so.
+
+### What your harness costs on every request
+
+An instruction file grows a section at a time until it is prepended, in full,
+to every question you ever ask. Nobody notices, because no single edit was
+unreasonable and nothing ever breaks — the model just has less room and more to
+ignore.
+
+The Context view puts a number on it, split by when the bytes are actually
+paid:
+
+- **Always** — root instruction files and memories, plus the name and
+  description of every capability, because progressive disclosure still has to
+  advertise what is available before the model can choose it. A folder of forty
+  skills is not free before you have used any of them.
+- **Conditional** — instruction files scoped by an `applyTo` glob, paid only
+  when the work touches matching files.
+- **On demand** — capability bodies, paid only once selected.
+
+That split matters more than the total. A 40 KB skill nobody has invoked this
+month costs almost nothing; a 12 KB always-on instruction file costs that much
+on every turn forever, and one number covering both would tell you to delete
+the wrong thing.
+
+Two things are deliberately not estimated. MCP servers publish their tool
+schemas at runtime, and their real context cost can only be known by launching
+them, which this tool never does — they are reported as a count and named as an
+unmeasured factor rather than given a fabricated size. And token counts are an
+explicit approximation at four bytes per token, because bundling a tokenizer
+per vendor would be a large dependency in service of a number that only needs
+to be right to an order of magnitude.
+
 ## Usage
 
 ```bash
@@ -170,6 +254,7 @@ npx ai-harness-helper [options]
 | `--no-open`             | Do not launch a browser.                                      |
 | `--json`                | Print the full report as JSON and exit. Implies `--no-open`.  |
 | `--report <format>`     | Print a report and exit: `json` or `markdown`.                |
+| `--review`              | Print the quality review and exit. Implies `--no-open`.       |
 | `--check`               | Exit 2 when anything at error severity was found.             |
 | `--fail-on <level>`     | Threshold for `--check`: `error`, `warning`, or `info`.       |
 | `-h`, `--help`          | Show help.                                                    |
@@ -191,19 +276,26 @@ npx ai-harness-helper --projects-only --project ~/code/my-app
 
 ### Without the browser
 
-Any of `--json`, `--report`, `--check` or `--fail-on` runs the scan, prints the
-result, and exits without starting a server. Progress goes to stderr so stdout
-stays a clean document:
+Any of `--json`, `--report`, `--review`, `--check` or `--fail-on` runs the scan,
+prints the result, and exits without starting a server. Progress goes to stderr
+so stdout stays a clean document:
 
 ```bash
 npx ai-harness-helper --json | jq '.summary'
+npx ai-harness-helper --json | jq '.review.summary'
 npx ai-harness-helper --report markdown > harness.md
+npx ai-harness-helper --review
 ```
 
+`--review` prints the quality pass on its own, grouped by file so you can work
+through it one document at a time.
+
 `--check` turns the scan into a gate. It exits 2 when anything at error severity
-was found, 0 when nothing was, and 1 only if the command itself failed. Lower
-the bar with `--fail-on warning` to fail on conflicts and models with an
-announced shutdown as well:
+was found, 0 when nothing was, and 1 only if the command itself failed. Health
+findings and review issues are weighed together, so a skill with no description
+fails a build exactly the way an unparseable settings file does. Lower the bar
+with `--fail-on warning` to fail on conflicts, models with an announced
+shutdown, broken links, and unset server variables as well:
 
 ```bash
 npx ai-harness-helper --check --project . --projects-only
@@ -218,7 +310,7 @@ issued.
 | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
 | Claude Code               | `~/.claude/` settings, CLAUDE.md, agents, commands, skills, plugins; `~/.claude.json`; managed settings; project `.claude/**`, `.mcp.json` |
 | Claude Desktop            | `claude_desktop_config.json`, installed extensions                                                                                         |
-| GitHub Copilot CLI        | `~/.copilot/` config, MCP config, agents, skills, prompts                                                                                  |
+| GitHub Copilot CLI        | `~/.copilot/` config, personal `copilot-instructions.md`, saved permissions, MCP config, agents, skills, prompts                           |
 | GitHub Copilot in editors | `.github/copilot-instructions.md`, `instructions/`, `prompts/`, `chatmodes/`, `agents/`                                                    |
 | VS Code                   | user and profile `settings.json` / `mcp.json`, `prompts/`, project `.vscode/**`                                                            |
 | Cursor                    | `~/.cursor/mcp.json`, rules, project `.cursor/**`, `.cursorrules`, `.cursorignore`                                                         |
@@ -236,6 +328,13 @@ issued.
 
 Anything harness-shaped that no tool claims is reported as **unattributed**
 rather than silently dropped.
+
+A directory location contributes at most 200 files to the inventory. Some tools
+write unbounded per-session or per-server files into directories that also hold
+real configuration — one machine carried over a thousand OAuth token files
+beside a handful of settings — and walking those in full makes the whole
+inventory unreadable. When the limit bites, the overflow is reported as a scan
+problem rather than dropped quietly.
 
 This table is a summary; the **Sources** view in the UI is the authoritative
 list, because it shows the same registry resolved against _your_ machine — the

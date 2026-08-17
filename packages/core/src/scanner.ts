@@ -77,7 +77,7 @@ export interface ScanProblem {
   readonly providerId?: string;
   readonly locationId?: string;
   readonly message: string;
-  readonly code: 'permission-denied' | 'read-error' | 'too-large';
+  readonly code: 'permission-denied' | 'read-error' | 'too-large' | 'too-many';
 }
 
 /** A project root the user asked to include in the scan. */
@@ -111,10 +111,20 @@ export interface ScanOptions {
   readonly maxFileBytes?: number;
   /** Depth limit for the unattributed-file sweep inside project roots. */
   readonly sweepDepth?: number;
+  /**
+   * Largest number of files one directory location may contribute.
+   *
+   * Guards against a tool that writes unbounded per-session or per-server
+   * files into a directory this scanner is pointed at.
+   */
+  readonly maxFilesPerLocation?: number;
 }
 
 /** Files above this size are reported without a content hash. */
 const DEFAULT_MAX_FILE_BYTES = 8 * 1024 * 1024;
+
+/** Largest number of files one directory location contributes to the scan. */
+const DEFAULT_MAX_FILES_PER_LOCATION = 200;
 
 /** Directories never descended into during the unattributed sweep. */
 const SWEEP_IGNORES = [
@@ -183,6 +193,7 @@ export async function scan(options: ScanOptions): Promise<ScanResult> {
   const started = Date.now();
   const { environment } = options;
   const maxFileBytes = options.maxFileBytes ?? DEFAULT_MAX_FILE_BYTES;
+  const maxFilesPerLocation = options.maxFilesPerLocation ?? DEFAULT_MAX_FILES_PER_LOCATION;
   const projectRoots = (options.projectRoots ?? []).map((root) => resolve(root));
 
   const files: DiscoveredFile[] = [];
@@ -206,6 +217,7 @@ export async function scan(options: ScanOptions): Promise<ScanResult> {
             problems,
             claimed,
             root,
+            maxFilesPerLocation,
           ),
         );
       }
@@ -220,6 +232,8 @@ export async function scan(options: ScanOptions): Promise<ScanResult> {
           missing,
           problems,
           claimed,
+          undefined,
+          maxFilesPerLocation,
         ),
       );
     }
@@ -275,6 +289,7 @@ async function collectLocation(
   problems: ScanProblem[],
   claimed: Set<string>,
   projectRoot?: string,
+  maxFilesPerLocation: number = DEFAULT_MAX_FILES_PER_LOCATION,
 ): Promise<void> {
   const candidates = expandTemplates(location.paths, environment, projectRoot);
   if (candidates.length === 0) return;
@@ -293,6 +308,7 @@ async function collectLocation(
         problems,
         claimed,
         projectRoot,
+        maxFilesPerLocation,
       );
     } else {
       const added = await collectFile(
@@ -401,6 +417,7 @@ async function collectDirectory(
   problems: ScanProblem[],
   claimed: Set<string>,
   projectRoot?: string,
+  maxFilesPerLocation: number = DEFAULT_MAX_FILES_PER_LOCATION,
 ): Promise<number> {
   try {
     const stats = await stat(directory);
@@ -439,7 +456,16 @@ async function collectDirectory(
   }
 
   let count = 0;
-  for (const match of matches) {
+  // A directory location is only as bounded as the tool that writes into it.
+  // One real installation carried a thousand OAuth token files in a directory
+  // this scanner would otherwise walk in full, which is enough to make the
+  // whole inventory unreadable. The overflow is reported rather than dropped
+  // silently, because "we found more than we are showing you" is exactly the
+  // kind of thing this product exists to say out loud.
+  const limited = matches.length > maxFilesPerLocation;
+  const considered = limited ? matches.slice(0, maxFilesPerLocation) : matches;
+
+  for (const match of considered) {
     const normalized = environment.platform === 'win32' ? match.replace(/\//g, sep) : match;
     const added = await collectFile(
       provider,
@@ -455,6 +481,19 @@ async function collectDirectory(
     );
     if (added) count += 1;
   }
+
+  if (limited) {
+    problems.push({
+      path: directory,
+      providerId: provider.id,
+      locationId: location.id,
+      message:
+        `${matches.length} files matched here, above the ${maxFilesPerLocation} per-location limit. ` +
+        `The first ${maxFilesPerLocation} were inventoried and the rest were skipped.`,
+      code: 'too-many',
+    });
+  }
+
   return count;
 }
 

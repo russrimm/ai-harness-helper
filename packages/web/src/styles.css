@@ -1024,6 +1024,255 @@
     @apply m-0;
   }
 
+  /* ----- Review view ----- */
+
+  /* A button that reads as a link. Used where the action is "show me more of
+     what is already on this page", which a full button would over-weight. */
+  .link-button {
+    @apply cursor-pointer border-0 bg-transparent p-0 font-sans text-inherit text-link underline;
+  }
+
+  .link-button:hover {
+    @apply text-link-visited;
+  }
+
+  .review-score {
+    @apply my-3 flex items-center gap-4 rounded-xl border border-border bg-surface px-4 py-3;
+  }
+
+  .review-score-ok {
+    @apply border-ok;
+  }
+
+  .review-score-warning {
+    @apply border-warning;
+  }
+
+  .review-score-error {
+    @apply border-error;
+  }
+
+  .review-score-value {
+    @apply flex items-baseline gap-1;
+  }
+
+  .review-score-value strong {
+    @apply text-4xl font-bold leading-none;
+  }
+
+  .review-score-ok .review-score-value strong {
+    @apply text-ok;
+  }
+
+  .review-score-warning .review-score-value strong {
+    @apply text-warning;
+  }
+
+  .review-score-error .review-score-value strong {
+    @apply text-error;
+  }
+
+  .review-score-body {
+    @apply min-w-0 flex-1;
+  }
+
+  .review-score-grade {
+    @apply m-0 font-bold;
+  }
+
+  .review-score-body p + p {
+    @apply mt-1;
+  }
+
+  .review-filters {
+    @apply flex flex-col gap-1;
+  }
+
+  .review-rules {
+    @apply my-3 rounded-xl border border-border bg-surface-muted px-4 py-2;
+  }
+
+  .review-rules h3 {
+    @apply mb-1 mt-3 text-base;
+  }
+
+  .review-rule-list {
+    @apply m-0 flex list-none flex-col gap-2 p-0;
+  }
+
+  .review-rule-list p {
+    @apply m-0 mt-1;
+  }
+
+  .review-groups {
+    @apply m-0 flex list-none flex-col gap-4 p-0;
+  }
+
+  .review-group {
+    @apply rounded-xl border border-border border-l-4 border-l-border-strong bg-surface px-4 py-3;
+  }
+
+  .review-group-error {
+    @apply border-l-error;
+  }
+
+  .review-group-warning {
+    @apply border-l-warning;
+  }
+
+  .review-group-info {
+    @apply border-l-info;
+  }
+
+  .review-group-header {
+    @apply mb-2 flex flex-wrap items-center gap-2;
+  }
+
+  .review-group-path {
+    @apply break-all font-mono text-sm font-semibold;
+  }
+
+  .review-issue-list {
+    @apply m-0 flex list-none flex-col gap-3 p-0;
+  }
+
+  .review-issue {
+    @apply grid items-start gap-3 border-t border-border pt-3;
+    grid-template-columns: 6rem minmax(0, 1fr);
+  }
+
+  .review-issue:first-child {
+    @apply border-t-0 pt-0;
+  }
+
+  .review-issue-body {
+    @apply min-w-0;
+  }
+
+  .review-issue-title {
+    @apply m-0 font-bold leading-snug;
+  }
+
+  .review-issue-detail {
+    @apply my-1 text-sm leading-snug;
+  }
+
+  .review-issue-fix {
+    @apply my-1 text-sm leading-snug text-ok;
+  }
+
+  .review-issue-meta {
+    @apply m-0 break-all;
+  }
+
+  /* ----- Context budget view ----- */
+
+  .budget-list {
+    @apply m-0 flex list-none flex-col gap-4 p-0;
+  }
+
+  .budget-card {
+    @apply rounded-xl border border-border bg-surface px-4 py-3;
+  }
+
+  .budget-card-header {
+    @apply flex flex-wrap items-baseline gap-2;
+  }
+
+  .budget-card-header h3 {
+    @apply m-0 text-base;
+  }
+
+  /* A single proportion against a single total, so a bar carries it better
+     than a chart would — and it degrades to its aria-label when it cannot. */
+  .budget-bar {
+    @apply my-2 h-2 w-full overflow-hidden rounded-full bg-surface-muted;
+  }
+
+  .budget-bar-fill {
+    @apply h-full rounded-full bg-primary;
+  }
+
+  .budget-split {
+    @apply m-0 my-2 flex flex-wrap gap-4;
+  }
+
+  .budget-split div {
+    @apply flex flex-col;
+  }
+
+  .budget-split dt {
+    @apply text-xs text-fg-muted;
+  }
+
+  .budget-split dd {
+    @apply m-0 font-mono text-sm font-semibold;
+  }
+
+  .budget-table {
+    @apply w-full border-collapse text-sm;
+  }
+
+  .budget-table th,
+  .budget-table td {
+    @apply border-t border-border px-2 py-1 text-left align-top;
+  }
+
+  .budget-path {
+    @apply block break-all font-mono;
+  }
+
+  /* ----- Command palette ----- */
+
+  .palette-backdrop {
+    @apply fixed inset-0 z-50 flex items-start justify-center bg-black/40 px-4 pt-[10vh];
+  }
+
+  .palette {
+    @apply flex max-h-[70vh] w-full max-w-[640px] flex-col overflow-hidden rounded-xl border border-border-strong bg-surface shadow-lg;
+  }
+
+  .palette-input {
+    @apply w-full rounded-none border-0 border-b border-border bg-transparent px-4 py-3 text-base;
+  }
+
+  .palette-results {
+    @apply m-0 min-h-0 flex-1 list-none overflow-y-auto p-0;
+  }
+
+  .palette-option {
+    @apply flex cursor-pointer items-baseline gap-2 px-4 py-2 text-sm;
+  }
+
+  .palette-option.is-active {
+    @apply bg-surface-muted;
+  }
+
+  .palette-option-label {
+    @apply font-semibold;
+  }
+
+  .palette-option-hint {
+    @apply min-w-0 flex-1 truncate text-xs text-fg-muted;
+  }
+
+  .palette-option-group {
+    @apply shrink-0 text-xs text-fg-muted;
+  }
+
+  .palette-empty {
+    @apply px-4 py-3 text-sm text-fg-muted;
+  }
+
+  .palette-footer {
+    @apply m-0 border-t border-border px-4 py-2;
+  }
+
+  .palette-hint kbd,
+  .palette-footer kbd {
+    @apply rounded border border-border bg-surface-muted px-1 font-mono text-xs;
+  }
+
   /* ----- Search view ----- */
 
   .search-box {

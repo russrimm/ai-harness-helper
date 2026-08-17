@@ -10,6 +10,7 @@ import type {
   CapabilityDocument,
   CapabilityEdit,
   CapabilityListResponse,
+  ContextBudgetReport,
   DeleteOutcome,
   EffectiveConfig,
   FileDocument,
@@ -18,6 +19,7 @@ import type {
   McpRemovalOutcome,
   OverviewResponse,
   ProjectsResponse,
+  ReviewReport,
   ScanResponse,
   SearchResponse,
   SourcesResponse,
@@ -179,6 +181,21 @@ export function getEffective(): Promise<EffectiveConfig> {
 
 export function getSources(): Promise<SourcesResponse> {
   return request('/api/sources');
+}
+
+/**
+ * Runs the quality review.
+ *
+ * Deliberately its own endpoint rather than part of the inventory: it is the
+ * only read path that opens file contents a second time, so a view that never
+ * asks for it never pays for it.
+ */
+export function getReview(): Promise<ReviewReport> {
+  return request('/api/review');
+}
+
+export function getContextBudget(): Promise<ContextBudgetReport> {
+  return request('/api/budget');
 }
 
 export function getFile(id: string, reveal = false): Promise<FileDocument> {

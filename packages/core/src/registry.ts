@@ -300,6 +300,28 @@ export const providers: readonly ProviderDefinition[] = [
         paths: { all: ['{home}/.copilot/mcp-config.json'] },
       },
       {
+        // verified: ~/.copilot/copilot-instructions.md
+        id: 'user-instructions',
+        label: 'Personal instructions',
+        scope: 'user',
+        kind: 'instructions',
+        format: 'markdown',
+        sensitivity: 'normal',
+        note: 'Applied to every session in every repository, before any project instructions.',
+        paths: { all: ['{home}/.copilot/copilot-instructions.md'] },
+      },
+      {
+        // verified: ~/.copilot/permissions-config.json
+        id: 'user-permissions',
+        label: 'Saved tool permissions',
+        scope: 'user',
+        kind: 'permissions',
+        format: 'json',
+        sensitivity: 'normal',
+        note: 'Approvals remembered per directory, so a rule you granted once keeps applying.',
+        paths: { all: ['{home}/.copilot/permissions-config.json'] },
+      },
+      {
         // verified: ~/.copilot/agents/*.agent.md
         id: 'user-agents',
         label: 'Custom agents',
