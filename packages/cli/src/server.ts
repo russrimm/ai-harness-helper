@@ -127,8 +127,13 @@ export async function createServer(options: ServerOptions): Promise<HarnessServe
 
   app.get('/api/sources', async () => service.getSources());
 
+  app.get('/api/review', async () => service.getReview());
+
+  app.get('/api/budget', async () => service.getContextBudget());
+
   app.get('/api/overview', async () => {
     const [result, inventory] = await Promise.all([service.getScan(), service.getInventory()]);
+    const budget = await service.getContextBudget();
     return {
       summary: inventory.summary,
       findings: inventory.findings,
@@ -138,6 +143,11 @@ export async function createServer(options: ServerOptions): Promise<HarnessServe
       projectRoots: result.projectRoots,
       detectedProviders: result.detectedProviders,
       missingCount: result.missing.length,
+      contextBudget: {
+        alwaysBytes: budget.totals.alwaysBytes,
+        alwaysTokens: budget.totals.alwaysTokens,
+        bytesPerToken: budget.bytesPerToken,
+      },
       tree: await service.getTree(),
     };
   });

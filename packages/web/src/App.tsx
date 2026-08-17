@@ -1,5 +1,6 @@
 import { lazy, Suspense, type ReactElement } from 'react';
 import { getHealth } from './api/client.js';
+import { CommandPalette } from './components/CommandPalette.js';
 import { Nav } from './components/Nav.js';
 import { LoadingState } from './components/StatusStates.js';
 import { ThemeToggle } from './components/ThemeToggle.js';
@@ -52,9 +53,19 @@ const ExportView = lazy(async () => {
   const module = await import('./views/ExportView.js');
   return { default: module.ExportView };
 });
+const ReviewView = lazy(async () => {
+  const module = await import('./views/ReviewView.js');
+  return { default: module.ReviewView };
+});
+const BudgetView = lazy(async () => {
+  const module = await import('./views/BudgetView.js');
+  return { default: module.BudgetView };
+});
 
 const KNOWN_BASES = [
   '/',
+  '/review',
+  '/budget',
   '/sources',
   '/files',
   '/mcp',
@@ -87,6 +98,9 @@ export function App(): ReactElement {
                 <span aria-hidden="true">&#9888;</span> Read-only session
               </span>
             ) : null}
+            <span className="palette-hint muted small" aria-hidden="true">
+              <kbd>Ctrl</kbd>+<kbd>K</kbd>
+            </span>
             <ThemeToggle theme={theme} />
           </div>
         </div>
@@ -97,6 +111,8 @@ export function App(): ReactElement {
         <ViewErrorBoundary key={base}>
           <Suspense fallback={<LoadingState label="Loading view…" />}>
             {base === '/sources' ? <SourcesView /> : null}
+            {base === '/review' ? <ReviewView /> : null}
+            {base === '/budget' ? <BudgetView /> : null}
             {base === '/files' ? <FilesView initialFileId={rest} /> : null}
             {base === '/mcp' ? <McpView /> : null}
             {base === '/capabilities' ? <CapabilitiesView initialFileId={rest} /> : null}
@@ -113,6 +129,7 @@ export function App(): ReactElement {
           </Suspense>
         </ViewErrorBoundary>
       </main>
+      <CommandPalette />
     </>
   );
 }
