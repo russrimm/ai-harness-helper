@@ -1,6 +1,6 @@
 import { lazy, Suspense, type ReactElement } from 'react';
 import { getHealth } from './api/client.js';
-import { CommandPalette } from './components/CommandPalette.js';
+import { CommandPalette, openCommandPalette } from './components/CommandPalette.js';
 import { Nav } from './components/Nav.js';
 import { LoadingState } from './components/StatusStates.js';
 import { ThemeToggle } from './components/ThemeToggle.js';
@@ -90,21 +90,43 @@ export function App(): ReactElement {
         Skip to main content
       </a>
       <header className="app-header">
-        <div className="app-header-row">
-          <h1>AI Harness Helper</h1>
-          <div className="app-header-actions">
-            {health.data?.readOnly ? (
-              <span className="badge badge-warning">
-                <span aria-hidden="true">&#9888;</span> Read-only session
+        <div className="app-header-inner">
+          <div className="app-header-row">
+            <div className="app-brand">
+              <span className="app-brand-mark" aria-hidden="true">
+                AH
               </span>
-            ) : null}
-            <span className="palette-hint muted small" aria-hidden="true">
-              <kbd>Ctrl</kbd>+<kbd>K</kbd>
-            </span>
-            <ThemeToggle theme={theme} />
+              <h1>AI Harness Helper</h1>
+            </div>
+            <div className="app-header-actions">
+              {health.data?.readOnly ? (
+                <span className="badge badge-warning">
+                  <span aria-hidden="true">&#9888;</span> Read-only session
+                </span>
+              ) : null}
+              <button type="button" className="palette-trigger" onClick={openCommandPalette}>
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  className="palette-trigger-icon"
+                  aria-hidden="true"
+                >
+                  <circle cx="11" cy="11" r="7" />
+                  <path d="m20 20-3.5-3.5" />
+                </svg>
+                <span className="palette-trigger-label">Jump to…</span>
+                <kbd aria-hidden="true">Ctrl</kbd>
+                <kbd aria-hidden="true">K</kbd>
+              </button>
+              <ThemeToggle theme={theme} />
+            </div>
           </div>
+          <Nav currentBase={base} />
         </div>
-        <Nav currentBase={base} />
       </header>
       <main id="main-content">
         {/* Keyed by route so navigating away clears a failed view. */}
