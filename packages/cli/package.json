@@ -1,6 +1,6 @@
 {
   "name": "ai-harness-helper",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "description": "Discover, inspect, and edit every agentic AI harness configuration file on your machine.",
   "bin": {
