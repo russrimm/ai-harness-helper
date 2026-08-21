@@ -95,6 +95,19 @@ const STATIC_COMMANDS: readonly Command[] = [
 
 const MAX_RESULTS = 40;
 
+const OPEN_EVENT = 'ahh:open-palette';
+
+/**
+ * Opens the palette from anywhere.
+ *
+ * The header trigger uses this rather than lifting `open` into `App`, so the
+ * palette keeps owning its own state — including the deferred index load,
+ * which must still happen on first open and not on page load.
+ */
+export function openCommandPalette(): void {
+  window.dispatchEvent(new CustomEvent(OPEN_EVENT));
+}
+
 export function CommandPalette(): ReactElement | null {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -114,8 +127,16 @@ export function CommandPalette(): ReactElement | null {
         setOpen((current) => !current);
       }
     };
+    const onRequestOpen = (): void => {
+      restoreTo.current = document.activeElement as HTMLElement | null;
+      setOpen(true);
+    };
     window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
+    window.addEventListener(OPEN_EVENT, onRequestOpen);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener(OPEN_EVENT, onRequestOpen);
+    };
   }, []);
 
   const loadIndex = useCallback(async (): Promise<void> => {

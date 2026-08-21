@@ -17,12 +17,41 @@
 @custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
 
 @theme {
-  --font-sans: 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;
-  --font-mono: 'Cascadia Code', 'Consolas', 'SFMono-Regular', Menlo, monospace;
+  --font-sans:
+    ui-sans-serif, system-ui, -apple-system, 'Segoe UI Variable Text', 'Segoe UI', 'Inter',
+    'Helvetica Neue', Arial, sans-serif;
+  --font-mono:
+    ui-monospace, 'Cascadia Code', 'Cascadia Mono', 'JetBrains Mono', 'SFMono-Regular', Consolas,
+    Menlo, monospace;
+
+  /*
+   * A single radius scale, tuned one step softer than the Tailwind default.
+   * Overriding the scale here rather than at each call site is what keeps
+   * cards, inputs, and chips consistent — views had been mixing `rounded-lg`,
+   * `rounded-xl`, and `rounded-2xl` for the same kind of surface.
+   */
+  --radius-sm: 0.375rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.625rem;
+  --radius-xl: 0.875rem;
+  --radius-2xl: 1.125rem;
+
+  /* Motion is short and eased so hover feedback reads as responsive, never animated. */
+  --ease-out-soft: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 :root {
   color-scheme: light dark;
+
+  /*
+   * Height of the sticky header. Layouts that pin themselves to the viewport
+   * (the Files panes, the Skills sidebar) and the scroll-jump offset all
+   * subtract it, so it is stated once here rather than re-guessed as a magic
+   * pixel value at each call site.
+   */
+  --ahh-header-h: 6.1rem;
+  /* `main`'s own vertical padding, top and bottom together. */
+  --ahh-main-pad: 2.5rem;
 
   --ahh-bg: #f8fafc;
   --ahh-bg-raised: #ffffff;
@@ -48,24 +77,25 @@
   --ahh-neutral: #475569;
   --ahh-neutral-bg: #f1f5f9;
 
-  --ahh-shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06), 0 1px 1px rgba(15, 23, 42, 0.04);
-  --ahh-shadow-md: 0 12px 28px -8px rgba(15, 23, 42, 0.16), 0 2px 6px -2px rgba(15, 23, 42, 0.08);
+  --ahh-shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.04), 0 1px 3px rgba(15, 23, 42, 0.06);
+  --ahh-shadow-md: 0 4px 8px -3px rgba(15, 23, 42, 0.07), 0 14px 28px -8px rgba(15, 23, 42, 0.14);
+  --ahh-ring: rgba(67, 56, 202, 0.28);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --ahh-bg: #020617;
-    --ahh-bg-raised: #0f172a;
-    --ahh-bg-sunken: #1e293b;
-    --ahh-border: #334155;
-    --ahh-border-strong: #475569;
+    --ahh-bg: #0a0e17;
+    --ahh-bg-raised: #131a27;
+    --ahh-bg-sunken: #1c2536;
+    --ahh-border: #273244;
+    --ahh-border-strong: #3a4861;
     --ahh-text: #f1f5f9;
     --ahh-text-muted: #94a3b8;
     --ahh-link: #a5b4fc;
     --ahh-link-visited: #c4b5fd;
     --ahh-focus: #a5b4fc;
-    --ahh-accent: #818cf8;
-    --ahh-accent-fg: #0f172a;
+    --ahh-accent: #6366f1;
+    --ahh-accent-fg: #ffffff;
 
     --ahh-ok: #34d399;
     --ahh-ok-bg: rgba(16, 185, 129, 0.16);
@@ -78,8 +108,9 @@
     --ahh-neutral: #cbd5e1;
     --ahh-neutral-bg: rgba(100, 116, 139, 0.2);
 
-    --ahh-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
-    --ahh-shadow-md: 0 16px 32px -8px rgba(0, 0, 0, 0.55), 0 2px 8px -2px rgba(0, 0, 0, 0.4);
+    --ahh-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.45), 0 1px 3px rgba(0, 0, 0, 0.35);
+    --ahh-shadow-md: 0 4px 10px -3px rgba(0, 0, 0, 0.5), 0 18px 36px -10px rgba(0, 0, 0, 0.6);
+    --ahh-ring: rgba(129, 140, 248, 0.35);
   }
 }
 
@@ -106,23 +137,24 @@
   --ahh-info-bg: #f0f9ff;
   --ahh-neutral: #475569;
   --ahh-neutral-bg: #f1f5f9;
-  --ahh-shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06), 0 1px 1px rgba(15, 23, 42, 0.04);
-  --ahh-shadow-md: 0 12px 28px -8px rgba(15, 23, 42, 0.16), 0 2px 6px -2px rgba(15, 23, 42, 0.08);
+  --ahh-shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.04), 0 1px 3px rgba(15, 23, 42, 0.06);
+  --ahh-shadow-md: 0 4px 8px -3px rgba(15, 23, 42, 0.07), 0 14px 28px -8px rgba(15, 23, 42, 0.14);
+  --ahh-ring: rgba(67, 56, 202, 0.28);
 }
 
 :root[data-theme='dark'] {
-  --ahh-bg: #020617;
-  --ahh-bg-raised: #0f172a;
-  --ahh-bg-sunken: #1e293b;
-  --ahh-border: #334155;
-  --ahh-border-strong: #475569;
+  --ahh-bg: #0a0e17;
+  --ahh-bg-raised: #131a27;
+  --ahh-bg-sunken: #1c2536;
+  --ahh-border: #273244;
+  --ahh-border-strong: #3a4861;
   --ahh-text: #f1f5f9;
   --ahh-text-muted: #94a3b8;
   --ahh-link: #a5b4fc;
   --ahh-link-visited: #c4b5fd;
   --ahh-focus: #a5b4fc;
-  --ahh-accent: #818cf8;
-  --ahh-accent-fg: #0f172a;
+  --ahh-accent: #6366f1;
+  --ahh-accent-fg: #ffffff;
   --ahh-ok: #34d399;
   --ahh-ok-bg: rgba(16, 185, 129, 0.16);
   --ahh-warning: #fcd34d;
@@ -133,8 +165,9 @@
   --ahh-info-bg: rgba(2, 132, 199, 0.2);
   --ahh-neutral: #cbd5e1;
   --ahh-neutral-bg: rgba(100, 116, 139, 0.2);
-  --ahh-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
-  --ahh-shadow-md: 0 16px 32px -8px rgba(0, 0, 0, 0.55), 0 2px 8px -2px rgba(0, 0, 0, 0.4);
+  --ahh-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.45), 0 1px 3px rgba(0, 0, 0, 0.35);
+  --ahh-shadow-md: 0 4px 10px -3px rgba(0, 0, 0, 0.5), 0 18px 36px -10px rgba(0, 0, 0, 0.6);
+  --ahh-ring: rgba(129, 140, 248, 0.35);
 }
 
 /*
@@ -166,6 +199,7 @@
   --color-info-bg: var(--ahh-info-bg);
   --color-neutral: var(--ahh-neutral);
   --color-neutral-bg: var(--ahh-neutral-bg);
+  --color-ring: var(--ahh-ring);
   --shadow-card-sm: var(--ahh-shadow-sm);
   --shadow-card-md: var(--ahh-shadow-md);
 }
@@ -182,6 +216,59 @@
 
   body {
     @apply bg-canvas text-fg font-sans text-base leading-normal antialiased;
+    font-feature-settings: 'cv02', 'cv03', 'cv04';
+    text-rendering: optimizeLegibility;
+  }
+
+  html {
+    @apply scroll-smooth;
+    /*
+     * The header is sticky, so an in-page jump must stop below it rather than
+     * underneath it.
+     */
+    scroll-padding-top: calc(var(--ahh-header-h) + 1rem);
+  }
+
+  /*
+   * Thin, themed scrollbars. The Files tree and the palette both scroll inside
+   * a card, where a default platform scrollbar reads as a seam in the surface.
+   */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--ahh-border-strong) transparent;
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background-color: var(--ahh-border-strong);
+    border: 2px solid transparent;
+    background-clip: content-box;
+    border-radius: 999px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: var(--ahh-text-muted);
+    background-clip: content-box;
+  }
+
+  /* Motion is decoration here; every animated affordance still works without it. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
   }
 
   #root {
@@ -237,22 +324,50 @@
     @apply border-b border-border px-3 py-2 text-left align-top;
   }
 
-  /* Focus visibility: never rely on the browser default alone. */
+  /* A header row that reads as a header, rather than as the first data row. */
+  thead th {
+    @apply bg-surface-muted text-[0.8rem] font-semibold text-fg-muted;
+  }
+
+  /*
+   * Row hover skips the tinted rows: on a conflict or a pending removal the
+   * tint *is* the signal, and a hover wash would erase it.
+   */
+  tbody tr:not(.mcp-row-conflict):not(.mcp-remove-row):hover {
+    @apply bg-surface-muted/50;
+  }
+
+  /*
+   * Focus visibility: never rely on the browser default alone. Two solid
+   * pixels meet WCAG 2.2 focus appearance on their own; the soft ring behind
+   * them is what makes it read as deliberate rather than as a UA artifact.
+   */
   a:focus-visible,
   button:focus-visible,
   input:focus-visible,
   select:focus-visible,
   textarea:focus-visible,
   [tabindex]:focus-visible {
-    @apply rounded-sm outline outline-[3px] outline-offset-2 outline-focus;
+    @apply rounded-sm outline outline-2 outline-offset-2 outline-focus;
+    box-shadow: 0 0 0 4px var(--ahh-ring);
   }
 
   button {
-    @apply cursor-pointer rounded-lg border border-border-strong bg-surface px-4 py-2 font-sans text-sm text-fg transition-colors;
+    @apply cursor-pointer rounded-lg border border-border-strong bg-surface px-4 py-2 font-sans text-sm font-medium text-fg shadow-card-sm;
+    transition:
+      background-color 150ms var(--ease-out-soft),
+      border-color 150ms var(--ease-out-soft),
+      box-shadow 150ms var(--ease-out-soft),
+      transform 150ms var(--ease-out-soft);
   }
 
   button:hover:not(:disabled):not([aria-disabled='true']) {
-    @apply border-primary;
+    @apply border-primary bg-surface-muted;
+  }
+
+  /* A press that moves is what separates a real control from a styled div. */
+  button:active:not(:disabled):not([aria-disabled='true']) {
+    @apply translate-y-px shadow-none;
   }
 
   /*
@@ -262,16 +377,45 @@
    */
   button:disabled,
   button[aria-disabled='true'] {
-    @apply cursor-not-allowed opacity-55;
+    @apply cursor-not-allowed opacity-55 shadow-none;
   }
 
   input[type='text'],
   input[type='search'] {
     @apply rounded-lg border border-border-strong bg-surface px-3 py-2 font-sans text-sm text-fg;
+    transition:
+      border-color 150ms var(--ease-out-soft),
+      box-shadow 150ms var(--ease-out-soft);
   }
 
+  input[type='text']:hover,
+  input[type='search']:hover {
+    @apply border-primary/60;
+  }
+
+  /*
+   * A native select keeps its keyboard and platform behaviour, but its default
+   * chevron is the single most dated thing on a page, so only the arrow is
+   * replaced.
+   */
   select {
-    @apply rounded-lg border border-border-strong bg-surface px-2 py-1 font-sans text-sm text-fg;
+    @apply cursor-pointer rounded-lg border border-border-strong bg-surface py-1.5 pl-3 pr-8 font-sans text-sm text-fg;
+    appearance: none;
+    background-image:
+      linear-gradient(45deg, transparent 50%, currentColor 50%),
+      linear-gradient(135deg, currentColor 50%, transparent 50%);
+    background-position:
+      right 1rem center,
+      right 0.7rem center;
+    background-size:
+      0.3rem 0.3rem,
+      0.3rem 0.3rem;
+    background-repeat: no-repeat;
+    transition: border-color 150ms var(--ease-out-soft);
+  }
+
+  select:hover {
+    @apply border-primary;
   }
 
   label {
@@ -313,48 +457,135 @@
 
   /* ----- App shell ----- */
 
+  /*
+   * The header sticks because the findings and MCP lists run far past a
+   * viewport, and losing the whole navigation the moment you start reading is
+   * what made the app feel like a document rather than a tool.
+   */
   .app-header {
-    @apply border-b border-border bg-surface px-5 py-3;
+    @apply sticky top-0 z-40 border-b border-border bg-surface/85;
+    backdrop-filter: saturate(180%) blur(12px);
+    -webkit-backdrop-filter: saturate(180%) blur(12px);
+  }
+
+  /* Header content lines up with `main`, which is centred and width-capped. */
+  .app-header-inner {
+    @apply mx-auto w-full max-w-[1280px] px-5 pb-2 pt-3;
   }
 
   .app-header-row {
     @apply mb-2 flex items-center justify-between gap-4;
   }
 
-  .app-header-actions {
-    @apply flex items-center gap-4;
+  .app-brand {
+    @apply flex min-w-0 items-center gap-2.5;
   }
 
-  .theme-toggle {
+  .app-brand-mark {
+    @apply grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-primary text-primary-fg text-sm font-bold tracking-tight;
+    box-shadow: var(--ahh-shadow-sm);
+  }
+
+  .app-header-actions {
     @apply flex items-center gap-2;
   }
 
+  /*
+   * A visible trigger rather than a bare `Ctrl+K` caption: the shortcut hint
+   * alone left the palette undiscoverable to anyone who does not already know
+   * the convention.
+   */
+  .palette-trigger {
+    @apply flex items-center gap-2 rounded-lg border border-border bg-surface-muted py-1.5 pl-3 pr-2 text-sm text-fg-muted;
+  }
+
+  .palette-trigger:hover:not(:disabled) {
+    @apply border-primary bg-surface text-fg;
+  }
+
+  .palette-trigger-label {
+    @apply hidden sm:inline;
+  }
+
+  .palette-trigger-icon {
+    @apply h-4 w-4 shrink-0;
+  }
+
+  /*
+   * A segmented control instead of a labelled `<select>`. All three options
+   * stay visible, so the current mode is readable without opening anything.
+   */
+  .theme-toggle {
+    @apply inline-flex items-center gap-0.5 rounded-lg border border-border bg-surface-muted p-0.5;
+  }
+
+  .theme-toggle button {
+    @apply grid h-7 w-7 place-items-center rounded-md border-0 bg-transparent p-0 text-fg-muted shadow-none;
+  }
+
+  .theme-toggle button:hover:not([aria-pressed='true']) {
+    @apply bg-surface text-fg;
+  }
+
+  .theme-toggle button[aria-pressed='true'] {
+    @apply bg-surface text-fg shadow-card-sm;
+  }
+
+  .theme-toggle svg {
+    @apply h-4 w-4;
+  }
+
+  /*
+   * Twelve destinations do not wrap gracefully, so the row scrolls sideways
+   * on a narrow window instead of reflowing into a block of stacked links.
+   */
   .nav-list {
-    @apply m-0 flex list-none flex-wrap gap-1 p-0;
+    @apply m-0 flex list-none flex-nowrap gap-1 overflow-x-auto p-0 pb-0.5;
+    scrollbar-width: none;
+  }
+
+  .nav-list::-webkit-scrollbar {
+    @apply hidden;
+  }
+
+  /*
+   * Below the width where every destination fits, the row scrolls — so its
+   * right edge fades to say there is more, which a hidden scrollbar otherwise
+   * gives no hint of. Above that width the full row is visible and the mask
+   * would only dim the last link.
+   */
+  @media (max-width: 1200px) {
+    .nav-list {
+      mask-image: linear-gradient(to right, black calc(100% - 2.5rem), transparent 100%);
+      -webkit-mask-image: linear-gradient(to right, black calc(100% - 2.5rem), transparent 100%);
+    }
   }
 
   .nav-list a {
-    @apply inline-block rounded-lg px-3 py-2 text-sm font-medium text-fg no-underline transition-colors;
+    @apply inline-block whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-medium text-fg-muted no-underline;
+    transition:
+      background-color 150ms var(--ease-out-soft),
+      color 150ms var(--ease-out-soft);
   }
 
   .nav-list a:hover {
-    @apply bg-surface-muted;
+    @apply bg-surface-muted text-fg;
   }
 
   .nav-list a[aria-current='page'] {
-    @apply bg-primary text-primary-fg font-semibold;
+    @apply bg-primary text-primary-fg font-semibold shadow-card-sm;
   }
 
   .nav-link-highlight {
-    @apply border border-primary font-semibold text-primary;
+    @apply border border-dashed border-border-strong font-semibold text-fg-muted;
   }
 
   .nav-link-highlight:hover {
-    @apply bg-primary/10;
+    @apply border-solid border-primary bg-primary/10 text-primary;
   }
 
   .nav-list a[aria-current='page'].nav-link-highlight {
-    @apply bg-primary text-primary-fg;
+    @apply border-solid border-primary bg-primary text-primary-fg;
   }
 
   main {
@@ -372,7 +603,7 @@
   /* ----- Status states ----- */
 
   .state-message {
-    @apply rounded-xl border border-border bg-surface p-4;
+    @apply rounded-xl border border-border bg-surface p-4 shadow-card-sm;
   }
 
   .state-error {
@@ -493,25 +724,34 @@
 
   /* ----- Overview ----- */
 
+  /*
+   * Sized so the eight inventory cards still hold a single row at the layout's
+   * full width, rather than wrapping two orphans onto a second line.
+   */
   .stat-grid {
     @apply mb-2 grid gap-3;
-    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
   }
 
   .stat-card {
-    @apply rounded-2xl border border-border bg-surface p-4 shadow-card-sm transition-shadow;
+    @apply rounded-xl border border-border bg-surface p-4 shadow-card-sm;
+    transition:
+      border-color 150ms var(--ease-out-soft),
+      box-shadow 150ms var(--ease-out-soft),
+      transform 150ms var(--ease-out-soft);
   }
 
   .stat-card-value {
-    @apply m-0 text-[2rem] font-bold tracking-tight;
+    @apply m-0 text-[2rem] font-bold leading-none tracking-tight;
+    font-variant-numeric: tabular-nums;
   }
 
   .stat-card-label {
-    @apply m-0 text-sm text-fg-muted;
+    @apply m-0 mt-2 text-sm font-medium text-fg-muted;
   }
 
   .stat-card-hint {
-    @apply mb-0 mt-1 text-[0.78rem] text-fg-muted;
+    @apply mb-0 mt-1 text-[0.78rem] leading-snug text-fg-muted;
   }
 
   /* Linked cards keep the card's own look rather than the default link look. */
@@ -521,11 +761,11 @@
 
   a.stat-card-link:hover,
   a.stat-card-link:focus-visible {
-    @apply border-primary shadow-card-md;
+    @apply -translate-y-0.5 border-primary shadow-card-md;
   }
 
   a.stat-card-link:focus-visible {
-    @apply rounded-2xl;
+    @apply rounded-xl;
   }
 
   a.stat-card-link:hover .stat-card-label,
@@ -555,8 +795,13 @@
   }
 
   .finding-row {
-    @apply grid items-start gap-3 rounded-lg border border-border border-l-4 border-l-border-strong bg-surface px-4 py-3;
+    @apply grid items-start gap-3 rounded-xl border border-border border-l-4 border-l-border-strong bg-surface px-4 py-3 shadow-card-sm;
     grid-template-columns: 6rem minmax(0, 1fr);
+    transition: border-color 150ms var(--ease-out-soft);
+  }
+
+  .finding-row:hover {
+    @apply border-border-strong;
   }
 
   .finding-error {
@@ -595,8 +840,24 @@
     @apply my-1 text-[0.85rem] leading-snug text-fg-muted;
   }
 
+  /*
+   * Affected paths are references, not prose, so they wrap as chips rather
+   * than stacking as bare underlined lines — which read as a list of unrelated
+   * links and pushed the next finding off screen.
+   */
   .finding-files {
-    @apply m-0 mt-1 flex list-none flex-col gap-1 p-0 text-[0.85rem];
+    @apply m-0 mt-2 flex list-none flex-wrap gap-1.5 p-0;
+  }
+
+  .finding-files a {
+    @apply inline-block max-w-full break-all rounded-md border border-border bg-surface-muted px-2 py-0.5 font-mono text-xs text-fg-muted no-underline;
+    transition:
+      border-color 150ms var(--ease-out-soft),
+      color 150ms var(--ease-out-soft);
+  }
+
+  .finding-files a:hover {
+    @apply border-primary text-link;
   }
 
   .root-list li {
@@ -617,15 +878,23 @@
 
   /* ----- Files view ----- */
 
+  /*
+   * The tree and the editor each scroll inside their own pane, so the layout
+   * is pinned to the viewport rather than growing the page. `dvh` is what
+   * keeps that honest on mobile, where a `vh` unit ignores the retracting
+   * browser chrome, and the floor stops the editor collapsing to nothing on a
+   * short window.
+   */
   .files-layout {
     @apply grid items-stretch gap-5;
-    grid-template-columns: minmax(220px, 300px) 1fr;
+    grid-template-columns: minmax(15rem, 19rem) minmax(0, 1fr);
     grid-template-rows: minmax(0, 1fr);
-    height: calc(100vh - 220px);
+    height: calc(100dvh - var(--ahh-header-h) - var(--ahh-main-pad));
+    min-height: 30rem;
   }
 
   .file-tree {
-    @apply min-h-0 overflow-y-auto rounded-2xl border border-border bg-surface p-3;
+    @apply min-h-0 overflow-y-auto rounded-xl border border-border bg-surface p-3 shadow-card-sm;
   }
 
   .file-tree-provider {
@@ -657,6 +926,26 @@
     @apply min-w-0 flex-1;
   }
 
+  /*
+   * A delete trigger on every row put the most destructive action in the
+   * foreground of a list people mostly use to read. Where a pointer exists it
+   * stays out of the way until the row is hovered; `:focus-within` keeps it
+   * reachable by keyboard, and an open confirmation pins it visible. Touch and
+   * pen inputs never match `hover: hover`, so there it simply stays shown.
+   */
+  @media (hover: hover) {
+    .file-tree-row .icon-button-compact {
+      @apply opacity-0;
+      transition: opacity 150ms var(--ease-out-soft);
+    }
+
+    .file-tree-row:hover .icon-button-compact,
+    .file-tree-row:focus-within .icon-button-compact,
+    .file-tree-row .icon-button-compact[aria-expanded='true'] {
+      @apply opacity-100;
+    }
+  }
+
   .file-tree-link {
     @apply flex justify-between gap-2 rounded-md px-2 py-1 text-sm text-fg no-underline transition-colors;
   }
@@ -685,8 +974,17 @@
     @apply flex h-full min-w-0 flex-col;
   }
 
+  /*
+   * "Select a file" is the whole right-hand pane until something is chosen, so
+   * it is centred in that space rather than sitting as a short card pinned to
+   * the top of an otherwise empty column.
+   */
+  .file-detail > .state-empty {
+    @apply flex flex-1 flex-col items-center justify-center border-dashed text-center;
+  }
+
   .file-detail-panel {
-    @apply flex min-h-0 flex-1 flex-col rounded-2xl border border-border bg-surface p-4;
+    @apply flex min-h-0 flex-1 flex-col rounded-xl border border-border bg-surface p-4 shadow-card-sm;
   }
 
   .file-detail-code {
@@ -756,7 +1054,7 @@
   /* ----- MCP view ----- */
 
   .mcp-table {
-    @apply overflow-hidden rounded-2xl border border-border bg-surface;
+    @apply overflow-hidden rounded-xl border border-border bg-surface shadow-card-sm;
   }
 
   .mcp-row-conflict {
@@ -1225,15 +1523,24 @@
   /* ----- Command palette ----- */
 
   .palette-backdrop {
-    @apply fixed inset-0 z-50 flex items-start justify-center bg-black/40 px-4 pt-[10vh];
+    @apply fixed inset-0 z-50 flex items-start justify-center bg-black/50 px-4 pt-[10vh];
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    animation: ahh-fade-in 120ms var(--ease-out-soft);
   }
 
   .palette {
-    @apply flex max-h-[70vh] w-full max-w-[640px] flex-col overflow-hidden rounded-xl border border-border-strong bg-surface shadow-lg;
+    @apply flex max-h-[70vh] w-full max-w-[640px] flex-col overflow-hidden rounded-xl border border-border-strong bg-surface shadow-card-md;
+    animation: ahh-pop-in 140ms var(--ease-out-soft);
   }
 
   .palette-input {
     @apply w-full rounded-none border-0 border-b border-border bg-transparent px-4 py-3 text-base;
+  }
+
+  .palette-input:focus-visible {
+    @apply outline-none;
+    box-shadow: none;
   }
 
   .palette-results {
@@ -1268,7 +1575,7 @@
     @apply m-0 border-t border-border px-4 py-2;
   }
 
-  .palette-hint kbd,
+  .palette-trigger kbd,
   .palette-footer kbd {
     @apply rounded border border-border bg-surface-muted px-1 font-mono text-xs;
   }
@@ -1388,7 +1695,7 @@
   }
 
   .source-card {
-    @apply rounded-2xl border border-border bg-surface p-4;
+    @apply rounded-xl border border-border bg-surface p-4 shadow-card-sm;
   }
 
   .source-card-header {
@@ -1433,8 +1740,14 @@
     grid-template-columns: minmax(240px, 320px) 1fr;
   }
 
+  /*
+   * Offsets clear the sticky app header rather than the top of the viewport,
+   * which would slide the sidebar underneath it.
+   */
   .capability-sidebar {
-    @apply sticky top-3 max-h-[calc(100vh-8rem)] min-w-0 overflow-y-auto rounded-2xl border border-border bg-surface p-3;
+    @apply sticky min-w-0 overflow-y-auto rounded-xl border border-border bg-surface p-3 shadow-card-sm;
+    top: calc(var(--ahh-header-h) + 1.25rem);
+    max-height: calc(100dvh - var(--ahh-header-h) - var(--ahh-main-pad));
   }
 
   /* The sidebar is too narrow for the row layout the toolbar uses elsewhere,
@@ -1493,7 +1806,7 @@
   }
 
   .capability-detail {
-    @apply min-w-0 rounded-2xl border border-border bg-surface p-4;
+    @apply min-w-0 rounded-xl border border-border bg-surface p-4 shadow-card-sm;
   }
 
   .capability-facts {
@@ -1598,6 +1911,7 @@
     grid-template-columns: 1fr;
     grid-template-rows: auto auto;
     height: auto;
+    min-height: 0;
   }
 
   .file-tree {
@@ -1626,5 +1940,29 @@
   .capability-sidebar {
     position: static;
     max-height: 360px;
+  }
+}
+
+/*
+ * Entrance motion for the command palette. Both are suppressed wholesale by
+ * the `prefers-reduced-motion` rule in the base layer.
+ */
+@keyframes ahh-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes ahh-pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(-0.5rem) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
   }
 }
