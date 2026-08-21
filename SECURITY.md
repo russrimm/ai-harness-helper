@@ -108,9 +108,22 @@ would write the mask into the real file.
 
 ### Data handling
 
-- There is no telemetry and no outbound network access of any kind.
+- There is no telemetry, and no outbound network access by default.
+- The one exception is `--check-updates`, which is off unless that flag is
+  passed on the command line. It performs a single unauthenticated `GET`
+  against the GitHub releases API for this repository and sends nothing but a
+  `User-Agent` naming the tool and its version — no configuration data, no file
+  names, no machine or user identifiers. It cannot be enabled by a config file
+  or an environment variable, so "did this run touch the network?" is answered
+  entirely by the command line you typed.
+- The response is treated as untrusted. Only `tag_name` is read, it must be
+  under 64 characters and parse as a version, and the release link shown to you
+  is rebuilt from the hard-coded repository URL plus that validated tag rather
+  than taken from the payload. Nothing is downloaded or executed; updating is
+  left to your package manager.
 - File contents are never written to logs.
-- Nothing leaves the machine. The only network listener is loopback.
+- No configuration data ever leaves the machine. The only network listener is
+  loopback.
 - Backups written to `~/.ai-harness-helper/backups/` contain the original file
   contents, including secrets. On POSIX systems the backup directories are
   restricted to the current user (`0700`) and backup files to owner read/write

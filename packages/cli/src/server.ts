@@ -21,6 +21,8 @@ import {
   type HarnessService,
 } from '@ai-harness-helper/core';
 
+import { REPOSITORY_URL, type UpdateCheck } from './update-check.js';
+
 export interface ServerOptions {
   readonly service: HarnessService;
   /** Directory holding the built web bundle. Omit to run API-only. */
@@ -29,6 +31,16 @@ export interface ServerOptions {
   readonly token?: string;
   /** Host the browser will use, for Host-header validation. */
   readonly host?: string;
+  /** Version of this build, shown on the About page. */
+  readonly version?: string;
+  /**
+   * Outcome of the update check, already resolved by the CLI.
+   *
+   * Passed in rather than performed here so the server itself never reaches
+   * the network — whether a request went out is decided once, by the flag, at
+   * startup.
+   */
+  readonly updateCheck?: UpdateCheck;
 }
 
 export interface HarnessServer {
@@ -110,6 +122,13 @@ export async function createServer(options: ServerOptions): Promise<HarnessServe
   });
 
   app.get('/api/health', async () => ({ ok: true, readOnly: service.readOnly }));
+
+  app.get('/api/about', async () => ({
+    version: options.version ?? '0.0.0',
+    repositoryUrl: REPOSITORY_URL,
+    readOnly: service.readOnly,
+    updateCheck: options.updateCheck ?? { status: 'disabled' },
+  }));
 
   app.get('/api/scan', async () => {
     const result = await service.getScan();

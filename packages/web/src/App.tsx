@@ -61,6 +61,10 @@ const BudgetView = lazy(async () => {
   const module = await import('./views/BudgetView.js');
   return { default: module.BudgetView };
 });
+const AboutView = lazy(async () => {
+  const module = await import('./views/AboutView.js');
+  return { default: module.AboutView };
+});
 
 const KNOWN_BASES = [
   '/',
@@ -76,6 +80,7 @@ const KNOWN_BASES = [
   '/search',
   '/export',
   '/project-roots',
+  '/about',
 ];
 
 export function App(): ReactElement {
@@ -146,6 +151,7 @@ export function App(): ReactElement {
             ) : null}
             {base === '/export' ? <ExportView /> : null}
             {base === '/project-roots' ? <ProjectRootsView /> : null}
+            {base === '/about' ? <AboutView /> : null}
             {base === '/' ? <OverviewView /> : null}
             {!KNOWN_BASES.includes(base) ? <NotFound /> : null}
           </Suspense>

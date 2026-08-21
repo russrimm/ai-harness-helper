@@ -7,6 +7,7 @@
  */
 
 import type {
+  AboutResponse,
   CapabilityDocument,
   CapabilityEdit,
   CapabilityListResponse,
@@ -157,6 +158,15 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export function getHealth(): Promise<HealthResponse> {
   return request('/api/health');
+}
+
+/**
+ * Build metadata for the About page: version, repository, and whatever the
+ * update check concluded at startup. The lookup itself already happened in the
+ * CLI, so reading this never causes a network request of its own.
+ */
+export function getAbout(): Promise<AboutResponse> {
+  return request('/api/about');
 }
 
 export function getOverview(): Promise<OverviewResponse> {

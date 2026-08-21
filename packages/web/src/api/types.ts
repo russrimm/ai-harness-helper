@@ -672,6 +672,25 @@ export interface HealthResponse {
   readOnly: boolean;
 }
 
+/**
+ * Result of the opt-in GitHub release lookup.
+ *
+ * `disabled` is the default and means no request was made: the check only runs
+ * when the CLI was started with `--check-updates`.
+ */
+export type UpdateCheck =
+  | { status: 'disabled' }
+  | { status: 'current'; currentVersion: string; latestVersion: string }
+  | { status: 'outdated'; currentVersion: string; latestVersion: string; releaseUrl: string }
+  | { status: 'failed'; currentVersion: string; reason: string };
+
+export interface AboutResponse {
+  version: string;
+  repositoryUrl: string;
+  readOnly: boolean;
+  updateCheck: UpdateCheck;
+}
+
 /* ------------------------------------------------- Skills & agents editor -- */
 
 /** Capability kinds the structured editor can open. */

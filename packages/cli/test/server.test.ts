@@ -6,6 +6,7 @@ import { HarnessService } from '@ai-harness-helper/core';
 import type { FastifyInstance } from 'fastify';
 
 import { createServer, createToken } from '../src/server.js';
+import type { UpdateCheck } from '../src/update-check.js';
 import { createFixture, samples, type Fixture } from '../../core/test/fixture.js';
 
 const TOKEN = 'test-token-0000000000000000';
@@ -21,14 +22,25 @@ interface InjectOptions {
   payload?: unknown;
 }
 
-async function start(options: { readOnly?: boolean } = {}): Promise<void> {
+async function start(
+  options: {
+    readOnly?: boolean;
+    version?: string;
+    updateCheck?: UpdateCheck;
+  } = {},
+): Promise<void> {
   const service = new HarnessService({
     environment: fixture.environment,
     projectRoots: [fixture.project],
     readOnly: options.readOnly ?? false,
     writerOptions: { backupRoot: `${fixture.root}/backups` },
   });
-  ({ app } = await createServer({ service, token: TOKEN }));
+  ({ app } = await createServer({
+    service,
+    token: TOKEN,
+    ...(options.version !== undefined ? { version: options.version } : {}),
+    ...(options.updateCheck !== undefined ? { updateCheck: options.updateCheck } : {}),
+  }));
 }
 
 async function call(options: InjectOptions) {
@@ -77,6 +89,10 @@ describe('authentication', () => {
   it('rejects an API call with no token', async () => {
     const response = await call({ url: '/api/overview', token: null });
     expect(response.statusCode).toBe(401);
+  });
+
+  it('does not exempt about from the token, unlike health', async () => {
+    expect((await call({ url: '/api/about', token: null })).statusCode).toBe(401);
   });
 
   it('rejects a wrong token, including one of a different length', async () => {
@@ -894,6 +910,49 @@ describe('project roots', () => {
     });
     expect(notDirectory.statusCode).toBe(400);
     expect((notDirectory.json() as { error: string }).error).toMatch(/not a directory/);
+  });
+});
+
+describe('about', () => {
+  it('reports the version and repository this build came from', async () => {
+    await start({ version: '1.4.2' });
+    const body = await call({ url: '/api/about' });
+    expect(body.json()).toEqual({
+      version: '1.4.2',
+      repositoryUrl: 'https://github.com/russrimm/ai-harness-helper',
+      readOnly: false,
+      updateCheck: { status: 'disabled' },
+    });
+  });
+
+  it('reports the update check as disabled when the CLI never ran one', async () => {
+    // The default for every run, so the About page can say so rather than
+    // implying the lookup failed.
+    const body = await call({ url: '/api/about' });
+    expect((body.json() as { updateCheck: { status: string } }).updateCheck.status).toBe(
+      'disabled',
+    );
+  });
+
+  it('passes through a completed update check rather than performing its own', async () => {
+    await start({
+      version: '0.1.0',
+      updateCheck: {
+        status: 'outdated',
+        currentVersion: '0.1.0',
+        latestVersion: '0.2.0',
+        releaseUrl: 'https://github.com/russrimm/ai-harness-helper/releases/tag/v0.2.0',
+      },
+    });
+    const body = call({ url: '/api/about' });
+    expect((await body).json()).toMatchObject({
+      updateCheck: { status: 'outdated', latestVersion: '0.2.0' },
+    });
+  });
+
+  it('surfaces a read-only session', async () => {
+    await start({ readOnly: true, version: '0.1.0' });
+    expect((await call({ url: '/api/about' })).json()).toMatchObject({ readOnly: true });
   });
 });
 
