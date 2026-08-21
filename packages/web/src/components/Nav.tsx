@@ -13,6 +13,7 @@ const LINKS: Array<{ path: string; label: string }> = [
   { path: '/models', label: 'Models' },
   { path: '/search', label: 'Search' },
   { path: '/export', label: 'Export' },
+  { path: '/about', label: 'About' },
 ];
 
 const PROJECT_ROOTS_PATH = '/project-roots';

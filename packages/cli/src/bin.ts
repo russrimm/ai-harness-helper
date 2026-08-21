@@ -14,6 +14,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { HarnessService, type ReviewReport } from '@ai-harness-helper/core';
 
 import { createServer } from './server.js';
+import { checkForUpdates, formatUpdateNotice, type UpdateCheck } from './update-check.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -37,6 +38,13 @@ interface Options {
   failOn: 'error' | 'warning' | 'info' | undefined;
   help: boolean;
   version: boolean;
+  /**
+   * Ask GitHub whether a newer release exists.
+   *
+   * Off unless this flag is present, because it is the only thing in the tool
+   * that reaches the network.
+   */
+  checkUpdates: boolean;
 }
 
 const USAGE = `
@@ -56,6 +64,9 @@ Options
       --review           Print the quality review and exit. Implies --no-open.
       --check            Exit 2 when anything at error severity was found.
       --fail-on <level>  Threshold for --check: error, warning, or info.
+      --check-updates    Ask GitHub whether a newer release exists. Off by
+                         default; this is the only network request the tool
+                         ever makes.
   -h, --help             Show this help.
   -v, --version          Show the version.
 
@@ -69,8 +80,10 @@ skill with no description fails a build the same way an unparseable settings
 file does.
 
 The server binds 127.0.0.1 only and requires a token that is generated fresh
-on every run. Nothing is sent anywhere: there is no telemetry and no outbound
-network access.
+on every run. There is no telemetry, and the only outbound request the tool can
+make is the release lookup behind --check-updates. Without that flag nothing
+leaves this machine. Even with it, only a version number is requested; nothing
+about your configuration is sent.
 `.trimStart();
 
 function parsePort(value: string | undefined): number {
@@ -114,6 +127,7 @@ export function parseArgs(argv: readonly string[]): Options {
     failOn: undefined,
     help: false,
     version: false,
+    checkUpdates: false,
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -157,6 +171,9 @@ export function parseArgs(argv: readonly string[]): Options {
         break;
       case '--review':
         options.review = true;
+        break;
+      case '--check-updates':
+        options.checkUpdates = true;
         break;
       case '--check':
         // `--check` on its own means "fail on anything serious". A separate
@@ -362,6 +379,13 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
   const inventory = await service.getInventory();
 
   if (headless) {
+    // Goes to stderr with the rest of the progress output, so a piped --json
+    // report stays parseable.
+    if (options.checkUpdates) {
+      const notice = formatUpdateNotice(await checkForUpdates(await readVersion()));
+      if (notice) progress.write(notice);
+    }
+
     if (options.report === 'json') {
       process.stdout.write(`${JSON.stringify(await service.exportJson(), null, 2)}\n`);
     } else if (options.report === 'markdown') {
@@ -410,7 +434,20 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
 
   const port = await choosePort(options.port);
   const publicDir = findPublicDir();
-  const { app, token } = await createServer({ service, ...(publicDir ? { publicDir } : {}) });
+  const version = await readVersion();
+
+  // Resolved before the server starts so the About page can render the answer
+  // immediately rather than the browser triggering a second network request.
+  const updateCheck: UpdateCheck = options.checkUpdates
+    ? await checkForUpdates(version)
+    : { status: 'disabled' };
+
+  const { app, token } = await createServer({
+    service,
+    version,
+    updateCheck,
+    ...(publicDir ? { publicDir } : {}),
+  });
 
   await app.listen({ port, host: '127.0.0.1' });
   const address = app.server.address();
@@ -425,6 +462,7 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
         : '') +
       (options.readOnly ? '  Read-only: editing is disabled.\n' : '') +
       (publicDir ? '' : '  No web bundle found; serving the API only.\n') +
+      (formatUpdateNotice(updateCheck) ?? '') +
       `\n  ${url}\n\n  Press Ctrl+C to stop.\n`,
   );
 

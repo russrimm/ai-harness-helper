@@ -21,7 +21,8 @@ npx ai-harness-helper
 ```
 
 That scans your machine and opens a local browser UI. Nothing is uploaded,
-there is no telemetry, and the tool makes no outbound network requests at all.
+there is no telemetry, and the tool makes no outbound network requests unless
+you explicitly ask it to check for a new release with `--check-updates`.
 
 ## What you get
 
@@ -72,6 +73,8 @@ there is no telemetry, and the tool makes no outbound network requests at all.
 - **Export** — the whole harness as JSON or a Markdown report, including the
   source map, duplicate flags, review issues, and context budget. Metadata
   only, with credentials masked, so it is safe to attach to a bug report.
+- **About** — which version you are running, where it came from, and, if you
+  asked for it with `--check-updates`, whether a newer release exists.
 
 Press <kbd>Ctrl</kbd>+<kbd>K</kbd> (<kbd>⌘</kbd>+<kbd>K</kbd> on macOS)
 anywhere in the UI to jump straight to a view, a file, a skill, or a server
@@ -257,6 +260,7 @@ npx ai-harness-helper [options]
 | `--review`              | Print the quality review and exit. Implies `--no-open`.       |
 | `--check`               | Exit 2 when anything at error severity was found.             |
 | `--fail-on <level>`     | Threshold for `--check`: `error`, `warning`, or `info`.       |
+| `--check-updates`       | Look up the latest release on GitHub. Off by default.         |
 | `-h`, `--help`          | Show help.                                                    |
 | `-v`, `--version`       | Show the version.                                             |
 
@@ -371,6 +375,14 @@ first-class design constraint rather than an afterthought.
   an `?api_key=` query string — are masked in the inventory and in exports, not
   just the ones declared under `env`.
 - File contents are never logged. There is no telemetry.
+- **The network is opt-in and does nothing but read a version.** Every scan,
+  parse, review, and edit happens offline. The single outbound request the tool
+  can make is a GitHub release lookup, it happens only when a run is started
+  with `--check-updates`, and it sends nothing but a `User-Agent` naming the
+  tool and its version. No configuration, no file names, no identifiers. The
+  release link shown afterwards is rebuilt from the repository URL and a tag
+  that had to parse as a version, so a spoofed response cannot put an arbitrary
+  link in front of you.
 
 See [SECURITY.md](SECURITY.md) for the full threat model.
 
@@ -462,7 +474,9 @@ The repository is a pnpm workspaces monorepo:
 - `packages/core` — pure TypeScript. Registry, path resolution, scanner,
   parsers, redactor, aggregator, writer. No network, no server, fully unit
   tested against a synthetic fixture home.
-- `packages/cli` — the Fastify API and the `ai-harness-helper` binary.
+- `packages/cli` — the Fastify API and the `ai-harness-helper` binary. Also
+  holds `update-check.ts`, the only module in the repository that reaches the
+  network, kept out of `core` so that package's offline guarantee stays whole.
 - `packages/web` — the React browser UI. Never touches the filesystem.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for review expectations and

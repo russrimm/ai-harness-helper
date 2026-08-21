@@ -91,6 +91,13 @@ const STATIC_COMMANDS: readonly Command[] = [
     group: 'Go to',
     href: '#/project-roots',
   },
+  {
+    id: 'nav-about',
+    label: 'About',
+    hint: 'Version and updates',
+    group: 'Go to',
+    href: '#/about',
+  },
 ];
 
 const MAX_RESULTS = 40;

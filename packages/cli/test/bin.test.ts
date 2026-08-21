@@ -19,6 +19,7 @@ describe('parseArgs', () => {
       report: undefined,
       review: false,
       failOn: undefined,
+      checkUpdates: false,
     });
   });
 
@@ -31,6 +32,20 @@ describe('parseArgs', () => {
     expect(parseArgs(['-h']).help).toBe(true);
     expect(parseArgs(['--help']).help).toBe(true);
     expect(parseArgs(['-v']).version).toBe(true);
+  });
+
+  it('leaves the update check off unless it is asked for by name', () => {
+    // The only thing in this tool that reaches the network, so nothing may
+    // enable it implicitly — least of all the similarly spelled --check.
+    expect(parseArgs([]).checkUpdates).toBe(false);
+    expect(parseArgs(['--check']).checkUpdates).toBe(false);
+    expect(parseArgs(['--check-updates']).checkUpdates).toBe(true);
+  });
+
+  it('keeps --check-updates from turning a run headless on its own', () => {
+    const options = parseArgs(['--check-updates']);
+    expect(options.open).toBe(true);
+    expect(options.failOn).toBeUndefined();
   });
 
   it('accepts repeated project roots and resolves them to absolute paths', () => {

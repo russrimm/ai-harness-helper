@@ -1,0 +1,89 @@
+name: Release
+
+# Every merged change to main becomes a release, so the version the About page
+# shows always identifies exactly one commit, and --check-updates has a real
+# release to compare against.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      release:
+        description: Which part of the version to increment.
+        type: choice
+        default: patch
+        options: [patch, minor, major]
+
+# Writing the bump commit, the tag, and the release all need contents: write.
+permissions:
+  contents: write
+
+# Two releases racing would produce two tags for one version, so runs are
+# queued rather than cancelled — a cancelled run could leave a bumped
+# package.json with no matching tag.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Bump, tag, and publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # The bump commit is itself a push to main. Without this the workflow would
+    # trigger on its own commit and release forever.
+    if: "!contains(github.event.head_commit.message, '[skip release]')"
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@a7487c7e89a18df4991f7f222e4898a00d66ddda # v4.1.0
+        with:
+          version: 10.34.5
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22.x
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      # A release that does not build is worse than no release, because
+      # --check-updates would point users at it.
+      - name: Verify
+        run: |
+          pnpm run typecheck
+          pnpm run build
+          pnpm test
+
+      - name: Bump version
+        id: bump
+        run: |
+          version="$(node scripts/bump-version.js "${{ inputs.release || 'patch' }}")"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+      - name: Commit and tag
+        env:
+          VERSION: ${{ steps.bump.outputs.version }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add package.json packages/*/package.json
+          git commit -m "chore(release): v${VERSION} [skip release]"
+          git tag -a "v${VERSION}" -m "v${VERSION}"
+          git push origin HEAD:main
+          git push origin "v${VERSION}"
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.bump.outputs.version }}
+        run: |
+          gh release create "v${VERSION}" \
+            --title "v${VERSION}" \
+            --generate-notes
