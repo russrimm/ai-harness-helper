@@ -5,7 +5,7 @@
  */
 
 import { spawn } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, realpathSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { createServer as createNetServer } from 'node:net';
 import { dirname, join, resolve } from 'node:path';
@@ -483,12 +483,36 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
   process.on('SIGTERM', shutdown);
 }
 
-// Comparing URLs rather than paths is what makes this correct on Windows,
-// where a drive-letter path becomes `file:///C:/...`.
-const entry = process.argv[1];
-const invokedDirectly = entry !== undefined && import.meta.url === pathToFileURL(entry).href;
+/**
+ * Whether this module is the process entry point rather than an import.
+ *
+ * Comparing URLs rather than paths is what makes this correct on Windows,
+ * where a drive-letter path becomes `file:///C:/...`. That is not enough on
+ * its own: Node resolves symlinks when it builds `import.meta.url`, but
+ * `process.argv[1]` keeps whatever path the caller actually typed. Any link
+ * between the two — a Windows junction, an `npm link`, a Homebrew-managed
+ * prefix, a pnpm global bin — makes the raw comparison false, and the CLI then
+ * exits 0 having silently done nothing at all.
+ *
+ * Resolving argv[1] the same way Node resolved the module URL is what keeps
+ * those installs working. A path that cannot be resolved is compared as-is,
+ * because a missing entry file is not this function's problem to report.
+ */
+export function isDirectInvocation(
+  entryPath: string | undefined,
+  moduleUrl: string = import.meta.url,
+): boolean {
+  if (entryPath === undefined) return false;
+  let resolved = entryPath;
+  try {
+    resolved = realpathSync(entryPath);
+  } catch {
+    // Fall through with the original path.
+  }
+  return moduleUrl === pathToFileURL(resolved).href;
+}
 
-if (invokedDirectly) {
+if (isDirectInvocation(process.argv[1])) {
   main().catch((error: unknown) => {
     process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
     process.exit(1);
