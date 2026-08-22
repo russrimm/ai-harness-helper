@@ -52,22 +52,49 @@ credentials.
 
 ### P0.3 AI and data boundary — RESOLVED
 
-The product calls no AI provider and no model. It reads local configuration and
-renders it.
+The product calls no AI provider by default. It reads local configuration and
+renders it. One optional pass, off unless `--advise` is passed on the command
+line, sends a redacted harness summary to a model endpoint the user names.
 
 - **Input:** local config files, discovered from a declarative registry, plus
   project roots the user explicitly registers.
-- **Egress:** none. No telemetry, no outbound network access, loopback-only
-  listener.
+- **Egress:** none by default. Two opt-in exceptions, each requiring an
+  explicit command-line flag for that run: `--check-updates` (a release
+  lookup, sending only a `User-Agent`) and `--advise` (a harness summary to a
+  user-named OpenAI-compatible endpoint). Neither can be enabled by a config
+  file, an environment variable, or a request to the local API. There is no
+  telemetry and the listener remains loopback-only.
+- **What `--advise` sends:** capability and instruction metadata — names,
+  descriptions, tool lists, scopes, sizes — the findings the deterministic
+  rules already produced, and excerpts capped at 400 characters per document.
+  Never whole files, never absolute paths, never credential-store contents.
+  Everything is passed through `redactText` first, the payload is capped at
+  64 KB, and `--advise-dry-run` prints the exact body without sending it.
+  Plaintext HTTP is refused for any non-loopback host, so a remote endpoint
+  cannot receive the summary or the API key in the clear. A loopback endpoint
+  keeps the whole feature on-machine.
 - **Credentials:** never loaded. Credential stores are listed with metadata
   only and are never rendered or editable. Other secrets are masked by default
   by key name and value shape, revealed only per-value on explicit request,
-  and never cached, persisted, or logged.
+  and never cached, persisted, or logged. The advisor API key is read from the
+  environment, sent only as an `Authorization` header, and never written to
+  the response body, the console, or the browser.
 - **Retention:** nothing is stored except timestamped backups the user's own
   edits create, under `~/.ai-harness-helper/backups/`.
 - **Threat model:** documented in [SECURITY.md](SECURITY.md). Prompt injection
-  is out of scope because no content is ever sent to a model; config files are
-  parsed as data and rendered as text, never executed.
+  is out of scope for the default configuration, where no content reaches a
+  model; config files are parsed as data and rendered as text, never executed.
+  It is **in scope for `--advise`**, because the excerpts come from files this
+  tool did not author. It is contained rather than prevented: the model is
+  given no tools and no ability to act, its reply is read only as data against
+  a fixed schema, provenance is attached from the local index rather than from
+  the reply, and no recommendation can write to disk or affect the exit code.
+  The residual risk is a misleading suggestion in a panel labelled as
+  model-generated.
+
+**Deliberately not chosen:** GitHub Models, which was retired on 30 July 2026
+and now answers `410`. There is no bundled provider or key, so the destination
+is always one the user picked.
 
 ### P1.1 First end-to-end workflow — RESOLVED
 

@@ -8,6 +8,10 @@
 
 import type {
   AboutResponse,
+  AdvisorFailure,
+  AdvisorPayload,
+  AdvisorResult,
+  AdvisorStatus,
   CapabilityDocument,
   CapabilityEdit,
   CapabilityListResponse,
@@ -206,6 +210,48 @@ export function getReview(): Promise<ReviewReport> {
 
 export function getContextBudget(): Promise<ContextBudgetReport> {
   return request('/api/budget');
+}
+
+/**
+ * Whether this run can ask a model, and where it would go.
+ *
+ * Reading this never causes an outbound request; it reports a decision the
+ * CLI already made from its own flag. The UI uses it to offer the button only
+ * when pressing it would work, and to name the destination beforehand.
+ */
+export function getAdvisorStatus(): Promise<AdvisorStatus> {
+  return request('/api/recommendations');
+}
+
+/**
+ * The exact payload that would be sent, without sending it.
+ *
+ * Offered so "it is only metadata and short excerpts" is something the user
+ * can verify rather than believe.
+ */
+export function getAdvisorPreview(): Promise<AdvisorPayload> {
+  return request('/api/recommendations/preview');
+}
+
+/**
+ * Runs the advisory pass.
+ *
+ * Like the write endpoints this returns its refusal shape rather than
+ * throwing for the failures that are outcomes rather than transport problems
+ * — an endpoint that rejected the key, or a model that answered with prose —
+ * because each needs to be read and acted on differently. A genuinely
+ * unreachable *local* server still throws `NetworkError`.
+ */
+export async function postRecommendations(): Promise<AdvisorResult | AdvisorFailure> {
+  const response = await fetchOrThrow('/api/recommendations', {
+    method: 'POST',
+    headers: { 'x-harness-token': token },
+  });
+  const body = await readJson(response);
+  if (body && typeof body === 'object' && 'status' in body) {
+    return body as AdvisorResult | AdvisorFailure;
+  }
+  return { status: 'failed', reason: `The request failed with status ${response.status}.` };
 }
 
 export function getFile(id: string, reveal = false): Promise<FileDocument> {
