@@ -1,9 +1,25 @@
 {
   "name": "@ai-harness-helper/core",
   "version": "0.1.1",
-  "private": true,
   "type": "module",
   "description": "Discovery, parsing, redaction, and safe-write engine for AI Harness Helper.",
+  "license": "MIT",
+  "author": "Russ Rimmerman",
+  "homepage": "https://github.com/russrimm/ai-harness-helper#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/russrimm/ai-harness-helper.git",
+    "directory": "packages/core"
+  },
+  "bugs": {
+    "url": "https://github.com/russrimm/ai-harness-helper/issues"
+  },
+  "engines": {
+    "node": ">=20.11.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {

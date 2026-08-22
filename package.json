@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "description": "Discover, inspect, and edit every agentic AI harness configuration file on your machine.",
+  "license": "MIT",
   "engines": {
     "node": ">=20.11.0"
   },

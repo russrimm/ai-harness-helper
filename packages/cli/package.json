@@ -3,6 +3,35 @@
   "version": "0.1.1",
   "type": "module",
   "description": "Discover, inspect, and edit every agentic AI harness configuration file on your machine.",
+  "license": "MIT",
+  "author": "Russ Rimmerman",
+  "homepage": "https://github.com/russrimm/ai-harness-helper#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/russrimm/ai-harness-helper.git",
+    "directory": "packages/cli"
+  },
+  "bugs": {
+    "url": "https://github.com/russrimm/ai-harness-helper/issues"
+  },
+  "keywords": [
+    "mcp",
+    "agentic",
+    "ai",
+    "copilot",
+    "claude-code",
+    "cursor",
+    "configuration",
+    "audit",
+    "context-window",
+    "cli"
+  ],
+  "engines": {
+    "node": ">=20.11.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "bin": {
     "ai-harness-helper": "./dist/bin.js"
   },
