@@ -484,5 +484,5 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for review expectations and
 
 ## License
 
-No license has been selected. Until the owner explicitly adds one, no license
-is granted for reuse, modification, or distribution.
+[MIT](LICENSE). The web package is bundled into the published CLI and is not
+released separately.
