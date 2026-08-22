@@ -22,7 +22,9 @@ npx ai-harness-helper
 
 That scans your machine and opens a local browser UI. Nothing is uploaded,
 there is no telemetry, and the tool makes no outbound network requests unless
-you explicitly ask it to check for a new release with `--check-updates`.
+you explicitly ask for one — either `--check-updates` to look up a release, or
+`--advise` to have a model comment on your configuration. Without those flags
+nothing leaves the machine.
 
 ## What you get
 
@@ -36,7 +38,9 @@ you explicitly ask it to check for a new release with `--check-updates`.
   deleted six months ago, an MCP server whose API-key variable was never
   exported, a permission rule that pre-approves every command in its class.
   Every issue names its fix, and a single score makes "did that edit help?"
-  answerable at a glance.
+  answerable at a glance. Optionally, `--advise` adds a second pass from a model
+  you point it at, for the judgements rules cannot make — off by default, and
+  never counted in the score.
 - **Context budget** — what the harness costs you on every request, split by
   when the bytes are actually paid: always, only when a glob matches, or only
   when a capability is selected. This is the view that makes streamlining
@@ -194,10 +198,11 @@ open to fix it:
 
 The same constraints that govern the rest of the tool govern the rules:
 
-- **Local only.** Nothing is fetched, nothing is executed, and no model is
-  called. Every judgement comes from bytes already on disk plus the environment
+- **Local only.** No rule fetches anything, executes anything, or calls a
+  model. Every judgement comes from bytes already on disk plus the environment
   this process was started in — and for environment variables, only whether a
-  name is set, never its value.
+  name is set, never its value. The optional model pass below is separate, off
+  by default, and never changes a rule result or the score.
 - **Precision over recall.** A false positive teaches you to ignore the whole
   view, which costs more than the finding was worth. Broken-link checking looks
   at Markdown link targets and deliberately ignores backticked paths, because
@@ -210,6 +215,62 @@ The same constraints that govern the rest of the tool govern the rules:
 The score is a weighted deduction from 100 — errors cost more than warnings,
 warnings more than suggestions — and exists to make one question answerable:
 did that edit help? It is not a measurement, and the view says so.
+
+### Model recommendations
+
+The rules above are precise because they only assert things that are checkable.
+That is also their ceiling. A rule can prove a description is _missing_; it
+cannot tell you the one you wrote describes three of your skills equally well,
+or that two instruction files quietly contradict each other, or that a body is
+technically present and says nothing actionable. Those are judgements about
+writing, and the only thing that reads writing is a model.
+
+So `--advise` adds an optional second pass that asks one. It never replaces the
+rules and never touches the score:
+
+```bash
+export AI_HARNESS_ADVISOR_BASE_URL=http://localhost:11434/v1   # any OpenAI-compatible endpoint
+export AI_HARNESS_ADVISOR_MODEL=llama3.1
+npx ai-harness-helper --advise
+```
+
+Any OpenAI-compatible endpoint works, because there is no bundled provider and
+no bundled key. That covers a local runtime such as Ollama or LM Studio, Azure
+AI Foundry, OpenAI, and anything else speaking the same shape. Point it at
+loopback and the feature keeps the tool's offline guarantee completely intact.
+
+> **GitHub Models is not an option.** It was retired on 30 July 2026 — the
+> playground, catalog, and inference API are all gone, and the endpoint now
+> answers `410`. If you have older automation pointing at `models.github.ai` or
+> `models.inference.ai.azure.com`, neither exists any more.
+
+Five rules keep this from undermining everything else the tool promises:
+
+1. **Only the command line can turn it on.** Not a config file, not an
+   environment variable, not a request to the local API. The environment says
+   _where_ to go; the flag alone decides _whether_ to go. An exported variable
+   left in a shell profile cannot start sending your configuration somewhere.
+2. **Metadata and short excerpts, never whole files.** Names, descriptions,
+   tool lists, scopes, sizes, the findings the rules already produced, and the
+   opening few hundred characters of each document. Everything is redacted
+   first, and absolute paths — which name _you_ — are never included.
+3. **You can read the payload before you send one.** `--advise-dry-run` prints
+   the exact request body and contacts nothing; the Review view has the same
+   thing behind "See exactly what would be sent". A tool that reads your
+   credentials does not get to say "trust me" about an upload.
+4. **Plaintext HTTP is refused except on loopback.** Sending a harness summary
+   and an API key unencrypted to a remote host is not offered as a convenience.
+5. **The reply is treated as hostile.** The excerpts come from files this tool
+   did not write, so a skill body can and will try to impersonate instructions.
+   The model is given no tools and no ability to act, its answer is only ever
+   read as data for a fixed schema, and provenance is attached from the local
+   index rather than from the reply — so a recommendation naming a file you do
+   not have simply renders without a link. Nothing it says changes anything on
+   disk.
+
+Recommendations are labelled as model-generated wherever they appear, and are
+deliberately excluded from `--check` and `--fail-on`. A suggestion that could
+fail your build would make your build depend on a model's mood.
 
 ### What your harness costs on every request
 
@@ -261,6 +322,8 @@ npx ai-harness-helper [options]
 | `--check`               | Exit 2 when anything at error severity was found.             |
 | `--fail-on <level>`     | Threshold for `--check`: `error`, `warning`, or `info`.       |
 | `--check-updates`       | Look up the latest release on GitHub. Off by default.         |
+| `--advise`              | Also ask a model for recommendations. Off by default.         |
+| `--advise-dry-run`      | Print exactly what `--advise` would send, then exit.          |
 | `-h`, `--help`          | Show help.                                                    |
 | `-v`, `--version`       | Show the version.                                             |
 
@@ -375,14 +438,19 @@ first-class design constraint rather than an afterthought.
   an `?api_key=` query string — are masked in the inventory and in exports, not
   just the ones declared under `env`.
 - File contents are never logged. There is no telemetry.
-- **The network is opt-in and does nothing but read a version.** Every scan,
-  parse, review, and edit happens offline. The single outbound request the tool
-  can make is a GitHub release lookup, it happens only when a run is started
-  with `--check-updates`, and it sends nothing but a `User-Agent` naming the
-  tool and its version. No configuration, no file names, no identifiers. The
-  release link shown afterwards is rebuilt from the repository URL and a tag
-  that had to parse as a version, so a spoofed response cannot put an arbitrary
-  link in front of you.
+- **The network is opt-in, twice over.** Every scan, parse, review, and edit
+  happens offline. Two things can leave this machine and both are off unless a
+  flag on the command line turns them on for that run. A config file, an
+  environment variable, and a request to the local API can none of them enable
+  either one.
+  - `--check-updates` reads a GitHub release and sends nothing but a
+    `User-Agent` naming the tool and its version. No configuration, no file
+    names, no identifiers. The release link shown afterwards is rebuilt from
+    the repository URL and a tag that had to parse as a version, so a spoofed
+    response cannot put an arbitrary link in front of you.
+  - `--advise` sends a harness summary to the model endpoint _you_ name. See
+    [Model recommendations](#model-recommendations) for exactly what that is
+    and how to read it before you send it.
 
 See [SECURITY.md](SECURITY.md) for the full threat model.
 

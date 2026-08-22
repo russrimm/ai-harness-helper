@@ -15,6 +15,18 @@ import { HarnessService, type ReviewReport } from '@ai-harness-helper/core';
 
 import { createServer } from './server.js';
 import { checkForUpdates, formatUpdateNotice, type UpdateCheck } from './update-check.js';
+import {
+  BASE_URL_VAR,
+  MODEL_VAR,
+  API_KEY_VAR,
+  collectAdvisorInput,
+  formatAdvisorNotice,
+  isLoopbackEndpoint,
+  resolveAdvisorSetup,
+  runAdvisor,
+  type AdvisorRun,
+  type AdvisorSetup,
+} from './advisor.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -45,6 +57,16 @@ interface Options {
    * that reaches the network.
    */
   checkUpdates: boolean;
+  /**
+   * Ask a model to review the harness alongside the deterministic rules.
+   *
+   * Off unless this flag is present. The endpoint comes from the environment,
+   * but only this flag decides whether anything is sent, so an exported
+   * variable left in a shell profile cannot enable egress on its own.
+   */
+  advise: boolean;
+  /** Print exactly what `--advise` would send, without sending it. */
+  adviseDryRun: boolean;
 }
 
 const USAGE = `
@@ -66,7 +88,15 @@ Options
       --fail-on <level>  Threshold for --check: error, warning, or info.
       --check-updates    Ask GitHub whether a newer release exists. Off by
                          default; this is the only network request the tool
-                         ever makes.
+                         makes on its own.
+      --advise           Also ask a model to review your capabilities and
+                         instructions, alongside the offline rules. Off by
+                         default. Needs an endpoint in the environment:
+                           ${BASE_URL_VAR} — OpenAI-compatible base URL
+                           ${MODEL_VAR} — model to ask for
+                           ${API_KEY_VAR} — optional; local models need none
+      --advise-dry-run   Print exactly what --advise would send, then exit.
+                         Contacts nothing.
   -h, --help             Show this help.
   -v, --version          Show the version.
 
@@ -77,13 +107,14 @@ Exit codes
 
 --check and --fail-on weigh health findings and review issues together, so a
 skill with no description fails a build the same way an unparseable settings
-file does.
+file does. Model recommendations never affect the exit code: a suggestion that
+could fail a build would make builds depend on a model's mood.
 
 The server binds 127.0.0.1 only and requires a token that is generated fresh
-on every run. There is no telemetry, and the only outbound request the tool can
-make is the release lookup behind --check-updates. Without that flag nothing
-leaves this machine. Even with it, only a version number is requested; nothing
-about your configuration is sent.
+on every run. There is no telemetry. Two things can leave this machine, both
+off unless you ask for them: the release lookup behind --check-updates, and
+the harness summary behind --advise. Without those flags nothing leaves. Use
+--advise-dry-run to read the payload before you ever send one.
 `.trimStart();
 
 function parsePort(value: string | undefined): number {
@@ -128,6 +159,8 @@ export function parseArgs(argv: readonly string[]): Options {
     help: false,
     version: false,
     checkUpdates: false,
+    advise: false,
+    adviseDryRun: false,
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -175,6 +208,12 @@ export function parseArgs(argv: readonly string[]): Options {
       case '--check-updates':
         options.checkUpdates = true;
         break;
+      case '--advise':
+        options.advise = true;
+        break;
+      case '--advise-dry-run':
+        options.adviseDryRun = true;
+        break;
       case '--check':
         // `--check` on its own means "fail on anything serious". A separate
         // --fail-on can widen it, so only the default is set here.
@@ -220,8 +259,13 @@ export function parseArgs(argv: readonly string[]): Options {
   }
 
   // A report goes to stdout, so opening a browser would be noise, and a bare
-  // --check has nothing to show a browser either.
-  if (options.report !== undefined || options.failOn !== undefined || options.review) {
+  // --check has nothing to show a browser either. A dry run is pure stdout too.
+  if (
+    options.report !== undefined ||
+    options.failOn !== undefined ||
+    options.review ||
+    options.adviseDryRun
+  ) {
     options.open = false;
   }
 
@@ -340,6 +384,72 @@ export function formatReview(report: ReviewReport): string {
   return lines.join('\n');
 }
 
+/**
+ * Renders model recommendations for a terminal.
+ *
+ * Kept visually distinct from the rule output above it, and always labelled
+ * with the model that produced it, because the two carry very different
+ * weight: a rule fired on bytes that are definitely there, a recommendation is
+ * a machine's opinion the user is free to reject.
+ */
+export function formatRecommendations(run: AdvisorRun): string {
+  if (run.status !== 'ok') return formatAdvisorNotice(run) ?? '';
+
+  const lines: string[] = ['', `  Model recommendations — ${run.model}`];
+  if (run.truncated) {
+    lines.push('  (a large harness was sampled, so this is a partial view)');
+  }
+  lines.push('');
+
+  if (run.recommendations.length === 0) {
+    lines.push('  The model had nothing to add.', '');
+    return lines.join('\n');
+  }
+
+  for (const item of run.recommendations) {
+    lines.push(`  ${item.subject}`);
+    lines.push(`    [${item.severity}] ${item.title}`);
+    if (item.detail) lines.push(`      ${item.detail}`);
+    lines.push(`      Suggested: ${item.remediation}`);
+    if (item.displayPath) lines.push(`      ${item.displayPath}`);
+    lines.push('');
+  }
+
+  return lines.join('\n');
+}
+
+/**
+ * One line in the startup banner saying whether a model is in play.
+ *
+ * Silent when the feature is off, so the default run reads exactly as it
+ * always has. When it is on, the destination is named up front rather than
+ * being something the user discovers later in a network log.
+ */
+function describeAdvisorBanner(setup: AdvisorSetup): string {
+  switch (setup.status) {
+    case 'disabled':
+      return '';
+    case 'ready':
+      return isLoopbackEndpoint(setup.config.baseUrl)
+        ? `  Recommendations: ${setup.config.model} on a local endpoint. Nothing leaves this machine.\n`
+        : `  Recommendations: ${setup.config.model} at ${originOf(setup.config.baseUrl)}.` +
+            ' A harness summary is sent when you ask for it.\n';
+    case 'incomplete':
+      return `  Recommendations are off: set ${setup.missing.join(' and ')}.\n`;
+    case 'invalid':
+      return `  Recommendations are off: ${setup.reason}\n`;
+  }
+}
+
+/** Origin only, so a path carrying a key or tenant id never reaches the console. */
+function originOf(value: string): string {
+  try {
+    return new URL(value).origin;
+  } catch {
+    return 'the configured endpoint';
+  }
+}
+
 export async function main(argv: readonly string[] = process.argv.slice(2)): Promise<void> {
   let options: Options;
   try {
@@ -365,7 +475,11 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
     readOnly: options.readOnly,
   });
 
-  const headless = options.report !== undefined || options.failOn !== undefined || options.review;
+  const headless =
+    options.report !== undefined ||
+    options.failOn !== undefined ||
+    options.review ||
+    options.adviseDryRun;
 
   // Progress goes to stderr in headless mode so `--json` can be piped straight
   // into jq without the caller having to strip a banner off the front.
@@ -386,6 +500,15 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
       if (notice) progress.write(notice);
     }
 
+    // Answered before anything is sent, and without an endpoint being
+    // configured at all, so "what would you upload?" is a question the user
+    // can settle first and separately.
+    if (options.adviseDryRun) {
+      const { payload } = await collectAdvisorInput(service);
+      process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
+      return;
+    }
+
     if (options.report === 'json') {
       process.stdout.write(`${JSON.stringify(await service.exportJson(), null, 2)}\n`);
     } else if (options.report === 'markdown') {
@@ -394,6 +517,10 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
 
     if (options.review && options.report === undefined) {
       process.stdout.write(formatReview(await service.getReview()));
+      if (options.advise) {
+        const setup = resolveAdvisorSetup(true, process.env);
+        process.stdout.write(formatRecommendations(await runAdvisor(service, setup)));
+      }
     }
 
     if (options.failOn !== undefined) {
@@ -442,10 +569,16 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
     ? await checkForUpdates(version)
     : { status: 'disabled' };
 
+  // Resolved once, here, from the command line. The server is handed the
+  // answer rather than the ability to work it out, so no request arriving at
+  // the API can turn egress on for a run that did not ask for it.
+  const advisor = resolveAdvisorSetup(options.advise, process.env);
+
   const { app, token } = await createServer({
     service,
     version,
     updateCheck,
+    advisor,
     ...(publicDir ? { publicDir } : {}),
   });
 
@@ -462,6 +595,7 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
         : '') +
       (options.readOnly ? '  Read-only: editing is disabled.\n' : '') +
       (publicDir ? '' : '  No web bundle found; serving the API only.\n') +
+      describeAdvisorBanner(advisor) +
       (formatUpdateNotice(updateCheck) ?? '') +
       `\n  ${url}\n\n  Press Ctrl+C to stop.\n`,
   );

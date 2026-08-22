@@ -1421,6 +1421,28 @@
     @apply m-0 mt-1;
   }
 
+  /* Set apart from the rule output above it: a rule fired on bytes that are
+     definitely there, everything in here is a model's opinion. */
+  .review-advisor {
+    @apply my-3 rounded-xl border border-dashed border-border bg-surface-muted px-4 py-3;
+  }
+
+  .review-advisor h3 {
+    @apply mb-1 mt-0 text-base;
+  }
+
+  .review-advisor-actions {
+    @apply mt-2 flex flex-wrap items-center gap-3;
+  }
+
+  .review-advisor-preview {
+    @apply mt-2 max-h-96 overflow-auto rounded-lg border border-border bg-surface p-3 text-xs;
+  }
+
+  .review-advisor-failure {
+    @apply mt-2 text-error;
+  }
+
   .review-groups {
     @apply m-0 flex list-none flex-col gap-4 p-0;
   }

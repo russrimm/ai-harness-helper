@@ -22,6 +22,12 @@ import {
 } from '@ai-harness-helper/core';
 
 import { REPOSITORY_URL, type UpdateCheck } from './update-check.js';
+import {
+  collectAdvisorInput,
+  isLoopbackEndpoint,
+  runAdvisor,
+  type AdvisorSetup,
+} from './advisor.js';
 
 export interface ServerOptions {
   readonly service: HarnessService;
@@ -41,6 +47,14 @@ export interface ServerOptions {
    * startup.
    */
   readonly updateCheck?: UpdateCheck;
+  /**
+   * Whether this run may ask a model for recommendations, and where.
+   *
+   * Decided by the CLI from its own flag for the same reason as
+   * {@link updateCheck}: a browser request must never be able to turn egress
+   * on that the command line did not already allow. Absent means disabled.
+   */
+  readonly advisor?: AdvisorSetup;
 }
 
 export interface HarnessServer {
@@ -147,6 +161,53 @@ export async function createServer(options: ServerOptions): Promise<HarnessServe
   app.get('/api/sources', async () => service.getSources());
 
   app.get('/api/review', async () => service.getReview());
+
+  /**
+   * Whether this run may ask a model, and where it would go.
+   *
+   * Read separately from the run itself so the UI can offer the button only
+   * when it would work, and can name the destination before anyone presses
+   * it. The API key is never included in the answer.
+   */
+  app.get('/api/recommendations', async () => describeAdvisor(options.advisor));
+
+  /**
+   * The exact payload that would be sent, without sending it.
+   *
+   * This tool tells the user it sends metadata and short excerpts rather than
+   * their files. That is a claim they should be able to check rather than
+   * take on trust, so the assembled payload is readable in full before any
+   * request is made, and reading it never contacts anyone.
+   */
+  app.get('/api/recommendations/preview', async (_request, reply) => {
+    const advisor = options.advisor ?? { status: 'disabled' as const };
+    if (advisor.status !== 'ready') {
+      return reply.code(409).send(describeAdvisor(advisor));
+    }
+    const { payload } = await collectAdvisorInput(service);
+    return payload;
+  });
+
+  /**
+   * Runs the advisory pass.
+   *
+   * A POST because it causes an outbound request: nothing that leaves the
+   * machine should be reachable by a method a browser, prefetcher, or link
+   * can trigger on its own.
+   */
+  app.post('/api/recommendations', async (_request, reply) => {
+    const advisor = options.advisor ?? { status: 'disabled' as const };
+    if (advisor.status !== 'ready') {
+      return reply.code(409).send(describeAdvisor(advisor));
+    }
+    const run = await runAdvisor(service, advisor, {
+      ...(options.version ? { version: options.version } : {}),
+    });
+    if (run.status !== 'ok') {
+      return reply.code(502).send(run);
+    }
+    return run;
+  });
 
   app.get('/api/budget', async () => service.getContextBudget());
 
@@ -451,6 +512,42 @@ export async function createServer(options: ServerOptions): Promise<HarnessServe
   }
 
   return { app, token };
+}
+
+/**
+ * Reports advisory availability without leaking the credential.
+ *
+ * Only the origin of the endpoint is echoed, never the full URL and never the
+ * key: the destination is something the user needs to see confirmed, the
+ * secret is not, and this response is readable by anything holding the
+ * session token.
+ */
+function describeAdvisor(setup: AdvisorSetup | undefined): Record<string, unknown> {
+  const advisor = setup ?? { status: 'disabled' as const };
+  switch (advisor.status) {
+    case 'ready':
+      return {
+        status: 'ready',
+        model: advisor.config.model,
+        endpoint: originOf(advisor.config.baseUrl),
+        local: isLoopbackEndpoint(advisor.config.baseUrl),
+      };
+    case 'incomplete':
+      return { status: 'incomplete', missing: advisor.missing };
+    case 'invalid':
+      return { status: 'invalid', reason: advisor.reason };
+    case 'disabled':
+      return { status: 'disabled' };
+  }
+}
+
+/** Origin only, so a path carrying a key or tenant id is not echoed back. */
+function originOf(value: string): string {
+  try {
+    return new URL(value).origin;
+  } catch {
+    return 'the configured endpoint';
+  }
 }
 
 /** Accepts API credentials only from headers so request URLs never carry them. */

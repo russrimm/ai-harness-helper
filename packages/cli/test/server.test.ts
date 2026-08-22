@@ -7,6 +7,7 @@ import type { FastifyInstance } from 'fastify';
 
 import { createServer, createToken } from '../src/server.js';
 import type { UpdateCheck } from '../src/update-check.js';
+import type { AdvisorSetup } from '../src/advisor.js';
 import { createFixture, samples, type Fixture } from '../../core/test/fixture.js';
 
 const TOKEN = 'test-token-0000000000000000';
@@ -27,6 +28,7 @@ async function start(
     readOnly?: boolean;
     version?: string;
     updateCheck?: UpdateCheck;
+    advisor?: AdvisorSetup;
   } = {},
 ): Promise<void> {
   const service = new HarnessService({
@@ -40,6 +42,7 @@ async function start(
     token: TOKEN,
     ...(options.version !== undefined ? { version: options.version } : {}),
     ...(options.updateCheck !== undefined ? { updateCheck: options.updateCheck } : {}),
+    ...(options.advisor !== undefined ? { advisor: options.advisor } : {}),
   }));
 }
 
@@ -953,6 +956,92 @@ describe('about', () => {
   it('surfaces a read-only session', async () => {
     await start({ readOnly: true, version: '0.1.0' });
     expect((await call({ url: '/api/about' })).json()).toMatchObject({ readOnly: true });
+  });
+});
+
+describe('model recommendations', () => {
+  /** Reads a JSON body as a plain record, which every route here returns. */
+  function response(reply: { json: () => unknown }): Record<string, unknown> {
+    return reply.json() as Record<string, unknown>;
+  }
+
+  it('reports disabled when the CLI did not pass the flag', async () => {
+    await start();
+    const response = await call({ url: '/api/recommendations' });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ status: 'disabled' });
+  });
+
+  it('refuses to run when the CLI did not pass the flag', async () => {
+    // The whole boundary: a request arriving at the API must never be able to
+    // cause an outbound call that the command line did not already allow.
+    await start();
+    const response = await call({ method: 'POST', url: '/api/recommendations' });
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toMatchObject({ status: 'disabled' });
+  });
+
+  it('refuses to assemble a preview when the feature is off', async () => {
+    await start();
+    const response = await call({ url: '/api/recommendations/preview' });
+    expect(response.statusCode).toBe(409);
+  });
+
+  it('never echoes the API key back to the browser', async () => {
+    await start({
+      advisor: {
+        status: 'ready',
+        config: {
+          baseUrl: 'https://api.example.com/v1',
+          model: 'test-model',
+          apiKey: 'sk-must-never-appear',
+        },
+      },
+    });
+    const response = await call({ url: '/api/recommendations' });
+    expect(response.body).not.toContain('sk-must-never-appear');
+    expect(response.json()).toEqual({
+      status: 'ready',
+      model: 'test-model',
+      endpoint: 'https://api.example.com',
+      local: false,
+    });
+  });
+
+  it('reports a loopback endpoint as local, so the UI can say nothing leaves', async () => {
+    await start({
+      advisor: {
+        status: 'ready',
+        config: { baseUrl: 'http://localhost:11434/v1', model: 'llama3.1' },
+      },
+    });
+    expect(response(await call({ url: '/api/recommendations' })).local).toBe(true);
+  });
+
+  it('assembles a preview of metadata without contacting anything', async () => {
+    await start({
+      advisor: {
+        status: 'ready',
+        config: { baseUrl: 'http://localhost:11434/v1', model: 'llama3.1' },
+      },
+    });
+    const body = response(await call({ url: '/api/recommendations/preview' }));
+    expect(Array.isArray(body['subjects'])).toBe(true);
+    expect(Array.isArray(body['knownIssues'])).toBe(true);
+  });
+
+  it('passes the misconfiguration through so the UI can name the variable to set', async () => {
+    await start({ advisor: { status: 'incomplete', missing: ['AI_HARNESS_ADVISOR_MODEL'] } });
+    expect(response(await call({ url: '/api/recommendations' }))).toEqual({
+      status: 'incomplete',
+      missing: ['AI_HARNESS_ADVISOR_MODEL'],
+    });
+  });
+
+  it('still requires the session token', async () => {
+    await start();
+    const unauthorized = await call({ url: '/api/recommendations', token: null });
+    expect(unauthorized.statusCode).toBe(401);
   });
 });
 

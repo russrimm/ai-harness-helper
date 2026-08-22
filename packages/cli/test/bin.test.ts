@@ -20,6 +20,8 @@ describe('parseArgs', () => {
       review: false,
       failOn: undefined,
       checkUpdates: false,
+      advise: false,
+      adviseDryRun: false,
     });
   });
 
@@ -46,6 +48,25 @@ describe('parseArgs', () => {
     const options = parseArgs(['--check-updates']);
     expect(options.open).toBe(true);
     expect(options.failOn).toBeUndefined();
+  });
+
+  it('leaves model recommendations off unless they are asked for by name', () => {
+    // The second thing in this tool that reaches the network. Like the update
+    // check it must never switch itself on, and the neighbouring flags that
+    // also start with --advise must not imply each other.
+    expect(parseArgs([]).advise).toBe(false);
+    expect(parseArgs(['--advise']).advise).toBe(true);
+    expect(parseArgs(['--advise-dry-run']).advise).toBe(false);
+    expect(parseArgs(['--advise']).adviseDryRun).toBe(false);
+    expect(parseArgs(['--advise-dry-run']).adviseDryRun).toBe(true);
+  });
+
+  it('keeps --advise from turning a run headless, since the UI is where it is read', () => {
+    expect(parseArgs(['--advise']).open).toBe(true);
+  });
+
+  it('makes a dry run headless, because its whole output is the payload on stdout', () => {
+    expect(parseArgs(['--advise-dry-run']).open).toBe(false);
   });
 
   it('accepts repeated project roots and resolves them to absolute paths', () => {

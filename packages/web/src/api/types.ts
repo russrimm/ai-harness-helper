@@ -486,6 +486,68 @@ export interface ReviewReport {
   rules: ReviewRuleMeta[];
 }
 
+/* ------------------------------------------- Model-assisted recommendations -- */
+
+/**
+ * Whether this run may ask a model, and where.
+ *
+ * Decided by the CLI flag, never by the browser, so the UI can only ever
+ * report this state — it cannot change it. `endpoint` is an origin, never the
+ * full URL, and the API key is never sent to the browser at all.
+ */
+export type AdvisorStatus =
+  | { status: 'disabled' }
+  | { status: 'incomplete'; missing: string[] }
+  | { status: 'invalid'; reason: string }
+  | { status: 'ready'; model: string; endpoint: string; local: boolean };
+
+/** One capability or instruction as it would be sent. */
+export interface AdvisorSubject {
+  kind: 'capability' | 'instruction';
+  id: string;
+  name: string;
+  providerName: string;
+  scope: string;
+  description?: string;
+  tools?: string[];
+  appliesTo?: string;
+  bytes?: number;
+  excerpt?: string;
+}
+
+/** Exactly what would leave the machine, readable before anything does. */
+export interface AdvisorPayload {
+  subjects: AdvisorSubject[];
+  knownIssues: { subject: string; ruleId: string; severity: string; title: string }[];
+  truncated: boolean;
+}
+
+export interface Recommendation {
+  id: string;
+  subject: string;
+  severity: ReviewSeverity;
+  title: string;
+  detail: string;
+  remediation: string;
+  fileId?: string;
+  displayPath?: string;
+}
+
+export interface AdvisorResult {
+  status: 'ok';
+  model: string;
+  endpoint: string;
+  recommendations: Recommendation[];
+  truncated: boolean;
+}
+
+/** Every way the pass can decline to produce recommendations. */
+export type AdvisorFailure =
+  | { status: 'disabled' }
+  | { status: 'incomplete'; missing: string[] }
+  | { status: 'invalid'; reason: string }
+  | { status: 'failed'; reason: string };
+
 /* ------------------------------------------------------ Context budget -- */
 
 export type LoadTiming = 'always' | 'conditional' | 'on-demand';
