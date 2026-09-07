@@ -1,9 +1,17 @@
-import { resolve } from 'node:path';
+import { realpathSync } from 'node:fs';
+import { mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 import type { ReviewIssue } from '@ai-harness-helper/core';
 
-import { formatReview, parseArgs } from '../src/bin.js';
+import { formatReview, isDirectInvocation, parseArgs } from '../src/bin.js';
+
+// How Node builds import.meta.url for a real run: symlinks already resolved.
+const BIN_PATH = fileURLToPath(new URL('../src/bin.ts', import.meta.url));
+const BIN_URL = pathToFileURL(realpathSync(BIN_PATH)).href;
 
 describe('parseArgs', () => {
   it('defaults to opening a browser with editing enabled', () => {
@@ -254,3 +262,41 @@ function issue(
     scope: 'user',
   };
 }
+
+describe('isDirectInvocation', () => {
+  it('recognizes the module as the entry point', () => {
+    expect(isDirectInvocation(BIN_PATH, BIN_URL)).toBe(true);
+  });
+
+  it('ignores an unrelated entry point, so importing the module runs nothing', () => {
+    expect(isDirectInvocation(resolve('some', 'other', 'script.js'), BIN_URL)).toBe(false);
+    expect(isDirectInvocation(undefined, BIN_URL)).toBe(false);
+  });
+
+  it('still matches when the entry is reached through a symlinked directory', async () => {
+    // Regression: Node resolves symlinks when building import.meta.url, but
+    // argv[1] keeps the caller's literal path. Comparing them raw makes an
+    // npm-link, Homebrew, pnpm-global-bin or Windows-junction install exit 0
+    // without running anything.
+    const real = await mkdtemp(join(tmpdir(), 'ahh-real-'));
+    const link = join(await mkdtemp(join(tmpdir(), 'ahh-link-')), 'linked');
+    try {
+      const target = join(real, 'bin.js');
+      await writeFile(target, '// entry\n');
+      try {
+        await symlink(real, link, 'junction');
+      } catch {
+        return; // Unprivileged Windows without Developer Mode; nothing to assert.
+      }
+
+      const moduleUrl = pathToFileURL(realpathSync(target)).href;
+      const viaLink = join(link, 'bin.js');
+
+      expect(pathToFileURL(viaLink).href).not.toBe(moduleUrl);
+      expect(isDirectInvocation(viaLink, moduleUrl)).toBe(true);
+    } finally {
+      await rm(real, { recursive: true, force: true });
+      await rm(dirname(link), { recursive: true, force: true });
+    }
+  });
+});
