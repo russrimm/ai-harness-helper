@@ -60,6 +60,7 @@ export type ReviewRuleId =
   | 'instruction-missing-applyto'
   | 'instruction-oversized'
   | 'instruction-no-guidance'
+  | 'instruction-mixed-concerns'
   // Shared document rules
   | 'broken-reference'
   | 'stale-date'
@@ -151,6 +152,12 @@ export interface ReviewThresholds {
   readonly minBodyChars: number;
   /** Age, in days, at which a self-declared "as of" date reads as stale. */
   readonly staleDateDays: number;
+  /**
+   * Top-level (`##`) sections an oversized, always-on instruction file needs
+   * before its size reads as several bundled concerns rather than one topic
+   * that simply grew long.
+   */
+  readonly minTopicSections: number;
 }
 
 export const DEFAULT_REVIEW_THRESHOLDS: ReviewThresholds = {
@@ -162,6 +169,7 @@ export const DEFAULT_REVIEW_THRESHOLDS: ReviewThresholds = {
   maxInstructionBytes: 16 * 1024,
   minBodyChars: 40,
   staleDateDays: 365,
+  minTopicSections: 6,
 };
 
 export interface ReviewOptions {
@@ -270,6 +278,14 @@ export const REVIEW_RULES: readonly ReviewRuleMeta[] = [
     severity: 'info',
     rationale:
       'A file holding only headings or a title still loads on every request while telling the model nothing.',
+  },
+  {
+    id: 'instruction-mixed-concerns',
+    title: 'Always-on instruction file bundles many unrelated topics',
+    category: 'instruction',
+    severity: 'info',
+    rationale:
+      'A single always-on file covering many distinct topics — writing style, engineering process, and issue triage, say — pays for all of them on every turn even though a given task only ever touches one. Tools that support skills load those on demand instead, so splitting by topic is usually free.',
   },
   {
     id: 'broken-reference',
@@ -763,19 +779,50 @@ function reviewInstruction(
   }
 
   if (instruction.bytes > thresholds.maxInstructionBytes && !instruction.appliesTo) {
+    // The GitHub Copilot app and CLI share this one file as the sole "applies
+    // to every session, everywhere" surface, so it can name the app's own
+    // split — global App instructions, per-repository Instructions, and
+    // on-demand skills — instead of the generic "a skill" every other tool
+    // gets.
+    const isCopilotAppInstructions =
+      file.providerId === 'copilot-cli' && file.locationId === 'user-instructions';
     issues.push(
       emit(
         'instruction-oversized',
         'warning',
         `${instruction.title} is ${formatBytes(instruction.bytes)} loaded on every request`,
         `That is roughly ${estimateTokens(instruction.bytes).toLocaleString()} tokens spent before ${file.providerName} reads your actual question, on every single turn.`,
-        'Move situational guidance into a scoped instruction file or a skill, and keep the always-on file to rules that apply to everything.',
+        isCopilotAppInstructions
+          ? 'This file backs the GitHub Copilot app\'s global "App instructions" (app settings → Sessions → Instructions). Keep only rules that truly apply to every session here; move topic-specific guidance — documentation style, engineering workflow, review or triage criteria — into individual skills (Customize → Skills in the app sidebar), and move conventions that only apply to one repository into that repository\'s own Instructions field (app settings → Projects → the repository).'
+          : 'Move situational guidance into a scoped instruction file or a skill, and keep the always-on file to rules that apply to everything.',
       ),
     );
   }
 
   if (text !== undefined) {
-    const prose = stripFrontmatter(text)
+    const stripped = stripFrontmatter(text);
+    const topics = [...stripped.matchAll(/^##[ \t]+(.+)$/gm)].map((match) =>
+      (match[1] ?? '').trim(),
+    );
+    if (
+      !instruction.appliesTo &&
+      instruction.bytes > thresholds.maxInstructionBytes &&
+      topics.length >= thresholds.minTopicSections
+    ) {
+      const preview = topics.slice(0, 3).map((topic) => `"${topic}"`);
+      issues.push(
+        emit(
+          'instruction-mixed-concerns',
+          'info',
+          `${instruction.title} bundles ${topics.length} separate sections into one always-on file`,
+          `Sections such as ${preview.join(', ')}${topics.length > preview.length ? ', and more' : ''} read as distinct concerns, each paid for on every turn regardless of whether the current task touches it.`,
+          'Give each major, self-contained section its own skill (or scoped instruction file) so it loads only when the task needs it, and keep this file to the handful of rules that genuinely apply to every session.',
+          topics.join(' · '),
+        ),
+      );
+    }
+
+    const prose = stripped
       .replace(/^\s*#{1,6}\s.*$/gm, '')
       .replace(/^\s*[-*+]\s*$/gm, '')
       .trim();
