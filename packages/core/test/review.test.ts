@@ -317,6 +317,63 @@ describe('review - instructions', () => {
 
     expect(rules(issues)).toContain('instruction-no-guidance');
   });
+
+  it('gives GitHub Copilot app-specific remediation for an oversized personal instructions file', async () => {
+    fixture.write(
+      '.copilot/copilot-instructions.md',
+      `# Personal instructions\n\n${'Always double-check the plan before executing. '.repeat(1200)}`,
+    );
+
+    const issues = await review();
+    const issue = find(issues, 'instruction-oversized');
+
+    expect(issue?.remediation).toContain('App instructions');
+    expect(issue?.remediation).toContain('Skills');
+  });
+
+  it('keeps the generic remediation for an oversized instruction file elsewhere', async () => {
+    fixture.writeProject('CLAUDE.md', `# Rules\n\n${'Always be careful. '.repeat(1200)}`);
+
+    const issues = await review({ projectRoots: [fixture.project] });
+    const issue = find(issues, 'instruction-oversized');
+
+    expect(issue?.remediation).not.toContain('App instructions');
+  });
+
+  it('flags an always-on instruction file that bundles many unrelated sections', async () => {
+    const section = (title: string): string =>
+      `## ${title}\n\n${'Guidance text goes here. '.repeat(150)}\n\n`;
+    fixture.writeProject(
+      'CLAUDE.md',
+      [
+        '# Rules',
+        section('Testing'),
+        section('Style'),
+        section('Security'),
+        section('Documentation'),
+        section('Code review'),
+        section('Deployment'),
+      ].join('\n'),
+    );
+
+    const issues = await review({ projectRoots: [fixture.project] });
+    const issue = find(issues, 'instruction-mixed-concerns');
+
+    expect(issue).toBeDefined();
+    expect(issue?.evidence).toContain('Testing');
+    expect(issue?.evidence).toContain('Deployment');
+  });
+
+  it('does not flag a large file with only a few sections as mixed concerns', async () => {
+    fixture.writeProject(
+      'CLAUDE.md',
+      `# Rules\n\n## Style\n\n${'Always be careful. '.repeat(1200)}`,
+    );
+
+    const issues = await review({ projectRoots: [fixture.project] });
+
+    expect(rules(issues)).not.toContain('instruction-mixed-concerns');
+  });
 });
 
 describe('review - MCP servers', () => {
