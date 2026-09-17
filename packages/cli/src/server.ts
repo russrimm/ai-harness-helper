@@ -5,7 +5,7 @@
  * server is treated as a privileged endpoint rather than a convenience:
  *
  * - it binds the loopback interface only;
- * - every request must carry a token minted for this run;
+ * - every API route except health requires a token minted for this run;
  * - `Origin` and `Host` are validated, so a web page the user happens to have
  *   open cannot drive the API through the browser or via DNS rebinding;
  * - file access is allowlisted to paths the scanner actually found.
@@ -125,9 +125,10 @@ export async function createServer(options: ServerOptions): Promise<HarnessServe
     }
 
     // Static assets are unauthenticated so the page can bootstrap; the token
-    // guards every route that touches the filesystem.
-    if (!request.url.startsWith('/api/')) return;
-    if (request.url.startsWith('/api/health')) return;
+    // guards the matched API route, including percent-encoded URL aliases.
+    const route = request.routeOptions.url ?? request.url;
+    if (!route.startsWith('/api/')) return;
+    if (route === '/api/health') return;
 
     const provided = extractToken(request);
     if (!provided || !tokensMatch(provided, token)) {

@@ -4,6 +4,7 @@ import { markdown } from '@codemirror/lang-markdown';
 import { yaml } from '@codemirror/lang-yaml';
 import { EditorView } from '@codemirror/view';
 import type { ReactElement } from 'react';
+import { editorThemes } from './editor-theme.js';
 
 export type EditorLanguage = 'json' | 'yaml' | 'markdown' | 'text';
 
@@ -47,13 +48,17 @@ export function CodeEditor({
     <div role="group" aria-label={ariaLabel}>
       <CodeMirror
         value={value}
-        theme={theme}
+        theme={editorThemes[theme]}
         readOnly={readOnly}
         editable={!readOnly}
         height={height}
         extensions={[...extensionsFor(language), EditorView.lineWrapping]}
         onChange={onChange}
-        basicSetup={{ foldGutter: true, highlightActiveLine: !readOnly }}
+        basicSetup={{
+          foldGutter: true,
+          highlightActiveLine: !readOnly,
+          syntaxHighlighting: false,
+        }}
       />
     </div>
   );
