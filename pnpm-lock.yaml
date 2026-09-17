@@ -45,10 +45,10 @@ importers:
         version: link:../core
       '@fastify/static':
         specifier: ^10.1.2
-        version: 10.1.2(fastify@5.11.2)
+        version: 10.1.2(fastify@5.12.1)
       fastify:
-        specifier: ^5.10.0
-        version: 5.11.2
+        specifier: ^5.12.1
+        version: 5.12.1
 
   packages/core:
     dependencies:
@@ -76,9 +76,15 @@ importers:
       '@codemirror/lang-yaml':
         specifier: ^6.1.2
         version: 6.1.3
+      '@codemirror/language':
+        specifier: ^6.12.4
+        version: 6.12.4
       '@codemirror/view':
         specifier: ^6.38.6
         version: 6.43.8
+      '@lezer/highlight':
+        specifier: ^1.2.3
+        version: 1.2.3
       '@uiw/react-codemirror':
         specifier: ^4.25.4
         version: 4.25.11(@babel/runtime@8.0.0)(@codemirror/autocomplete@6.20.3)(@codemirror/language@6.12.4)(@codemirror/lint@6.9.7)(@codemirror/search@6.7.1)(@codemirror/state@6.7.1)(@codemirror/theme-one-dark@6.1.3)(@codemirror/view@6.43.8)(codemirror@6.0.2)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
@@ -1153,17 +1159,17 @@ packages:
   fast-querystring@1.1.2:
     resolution: {integrity: sha1-ptJJN7T8b3kbTuMdy29Trq+4n1M=, tarball: https://ms-feed-12.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/fast-querystring/-/fast-querystring-1.1.2.tgz}
 
-  fast-uri@3.1.5:
-    resolution: {integrity: sha1-YQ83QZoDAnBDDOzWjXTj1NlnJdA=, tarball: https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/fast-uri/-/fast-uri-3.1.5.tgz}
+  fast-uri@3.1.7:
+    resolution: {integrity: sha1-dDFX2Vfzy7TGUxDgM9wq1K19xgo=, tarball: https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/fast-uri/-/fast-uri-3.1.7.tgz}
 
-  fast-uri@4.1.2:
-    resolution: {integrity: sha1-HiJa8y+woXjbjxTX2bqT/yRIVpQ=, tarball: https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/fast-uri/-/fast-uri-4.1.2.tgz}
+  fast-uri@4.1.4:
+    resolution: {integrity: sha1-IHap17zoaoaqMaxAZQuTX9WxzWA=, tarball: https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/fast-uri/-/fast-uri-4.1.4.tgz}
 
   fastify-plugin@6.0.0:
     resolution: {integrity: sha1-fNZZxqrV878HtMWSBUEjUaR9Ocg=, tarball: https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/fastify-plugin/-/fastify-plugin-6.0.0.tgz}
 
-  fastify@5.11.2:
-    resolution: {integrity: sha1-WRBX3T5xHK/Q0RQOmCfqLHf5C4k=, tarball: https://ms-feed-12.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/fastify/-/fastify-5.11.2.tgz}
+  fastify@5.12.1:
+    resolution: {integrity: sha1-06c27Q1lbY/+7ZCccJmAmyS58Ag=, tarball: https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/fastify/-/fastify-5.12.1.tgz}
 
   fastq@1.20.1:
     resolution: {integrity: sha1-ynUKENySW8ixiDn9ID4+9LPO1nU=, tarball: https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/fastq/-/fastq-1.20.1.tgz}
@@ -2125,7 +2131,7 @@ snapshots:
     dependencies:
       ajv: 8.20.0
       ajv-formats: 3.0.1(ajv@8.20.0)
-      fast-uri: 3.1.5
+      fast-uri: 3.1.7
 
   '@fastify/error@4.2.0': {}
 
@@ -2152,13 +2158,13 @@ snapshots:
       http-errors: 2.0.1
       mime: 3.0.0
 
-  '@fastify/static@10.1.2(fastify@5.11.2)':
+  '@fastify/static@10.1.2(fastify@5.12.1)':
     dependencies:
       '@fastify/accept-negotiator': 2.0.1
       '@fastify/error': 4.2.0
       '@fastify/send': 4.1.0
       content-disposition: 2.0.1
-      fastify: 5.11.2
+      fastify: 5.12.1
       fastify-plugin: 6.0.0
       fastq: 1.20.1
       glob: 13.0.6
@@ -2637,7 +2643,7 @@ snapshots:
   ajv@8.20.0:
     dependencies:
       fast-deep-equal: 3.1.3
-      fast-uri: 3.1.5
+      fast-uri: 3.1.7
       json-schema-traverse: 1.0.0
       require-from-string: 2.0.2
 
@@ -2851,7 +2857,7 @@ snapshots:
       '@fastify/merge-json-schemas': 0.2.1
       ajv: 8.20.0
       ajv-formats: 3.0.1(ajv@8.20.0)
-      fast-uri: 4.1.2
+      fast-uri: 4.1.4
       json-schema-ref-resolver: 3.0.0
       rfdc: 1.4.1
 
@@ -2861,13 +2867,13 @@ snapshots:
     dependencies:
       fast-decode-uri-component: 1.0.1
 
-  fast-uri@3.1.5: {}
+  fast-uri@3.1.7: {}
 
-  fast-uri@4.1.2: {}
+  fast-uri@4.1.4: {}
 
   fastify-plugin@6.0.0: {}
 
-  fastify@5.11.2:
+  fastify@5.12.1:
     dependencies:
       '@fastify/ajv-compiler': 4.0.5
       '@fastify/error': 4.2.0

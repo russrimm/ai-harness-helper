@@ -48,8 +48,10 @@ machine, so the design assumes an attacker already has some local foothold.
 The server binds `127.0.0.1` only and requires a token generated fresh on each
 run, delivered in the URL the tool opens. A process that cannot read that URL
 cannot call the API. Tokens are 256 bits of entropy and compared in constant
-time. The browser strips the token from the address bar on load and keeps it in
-`sessionStorage`, so it survives a page reload but not closing the tab, and
+time. Authentication applies to the matched API route; only the exact health
+route and static web assets are public. The browser strips the token from the
+address bar on load and keeps it in `sessionStorage`, so it survives a page
+reload but not closing the tab, and
 remains unreadable to other origins and other local processes.
 
 **A malicious web page driving the API from your browser.**

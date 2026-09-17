@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { HarnessService } from '@ai-harness-helper/core';
 import type { FastifyInstance } from 'fastify';
@@ -79,6 +79,7 @@ beforeEach(async () => {
 
 afterEach(async () => {
   await app.close();
+  vi.restoreAllMocks();
   fixture.cleanup();
 });
 
@@ -96,6 +97,16 @@ describe('authentication', () => {
 
   it('does not exempt about from the token, unlike health', async () => {
     expect((await call({ url: '/api/about', token: null })).statusCode).toBe(401);
+  });
+
+  it('exempts only the exact health route, not routes sharing its prefix', async () => {
+    app.get('/api/health/details', async () => ({ private: true }));
+    app.get('/api/health-check', async () => ({ private: true }));
+
+    for (const url of ['/api/health/details', '/api/health-check']) {
+      expect((await call({ url, token: null })).statusCode).toBe(401);
+      expect((await call({ url })).statusCode).toBe(200);
+    }
   });
 
   it('rejects a wrong token, including one of a different length', async () => {
@@ -152,6 +163,130 @@ describe('authentication', () => {
     expect(a).toMatch(/^[A-Za-z0-9_-]+$/);
   });
 });
+
+describe.each(['/api', '/%61pi', '/a%70i', '/ap%69', '/%61%70%69'])(
+  'API path authentication: %s',
+  (prefix) => {
+    it.each([null, 'wrong', 'x'.repeat(TOKEN.length)])(
+      'rejects invalid credentials (%s) before calling any service handler',
+      async (token) => {
+        const methods = [
+          'getScan',
+          'refresh',
+          'getDocument',
+          'revealValue',
+          'writeDocument',
+          'deleteFile',
+          'addProjectRoot',
+          'removeProjectRoot',
+          'removeMcpServer',
+          'getCapabilityDocument',
+          'writeCapabilityDocument',
+        ] as const;
+        const handlers = methods.map((method) => vi.spyOn(HarnessService.prototype, method));
+        const requests: InjectOptions[] = [
+          { url: `${prefix}/scan` },
+          { method: 'POST', url: `${prefix}/scan` },
+          { url: `${prefix}/files/synthetic-id` },
+          { url: `${prefix}/files/synthetic-id?reveal=true` },
+          {
+            method: 'POST',
+            url: `${prefix}/files/synthetic-id/reveal`,
+            payload: { redactionId: 'synthetic-redaction' },
+          },
+          {
+            method: 'PUT',
+            url: `${prefix}/files/synthetic-id`,
+            payload: { content: '# Modified', expectedHash: 'synthetic-hash' },
+          },
+          { method: 'DELETE', url: `${prefix}/files/synthetic-id` },
+          { method: 'DELETE', url: `${prefix}/files/synthetic-id/mcp/synthetic-server` },
+          { url: `${prefix}/capabilities/synthetic-id?reveal=true` },
+          {
+            method: 'PUT',
+            url: `${prefix}/capabilities/synthetic-id`,
+            payload: { expectedHash: 'synthetic-hash', name: 'modified' },
+          },
+          { method: 'POST', url: `${prefix}/projects`, payload: { path: fixture.project } },
+          { method: 'DELETE', url: `${prefix}/projects`, payload: { path: fixture.project } },
+        ];
+
+        for (const request of requests) {
+          const response = await call({ ...request, token });
+          expect(response.statusCode, `${request.method ?? 'GET'} ${request.url}`).toBe(401);
+          expect(response.json()).toEqual({ error: 'Missing or invalid token.' });
+        }
+        for (const handler of handlers) expect(handler).not.toHaveBeenCalled();
+      },
+    );
+
+    it('allows authenticated reads, reveals, edits, deletions, and project registration', async () => {
+      expect((await call({ url: `${prefix}/scan` })).statusCode).toBe(200);
+      const id = await firstFileId('.claude/CLAUDE.md');
+      const document = await call({ url: `${prefix}/files/${id}?reveal=true` });
+      expect(document.statusCode).toBe(200);
+      const { hash, revealed } = document.json<{ hash: string; revealed: boolean }>();
+      expect(revealed).toBe(true);
+
+      const edited = await call({
+        method: 'PUT',
+        url: `${prefix}/files/${id}`,
+        payload: { content: '# Updated synthetic instructions\n', expectedHash: hash },
+      });
+      expect(edited.statusCode).toBe(200);
+      expect(readFileSync(join(fixture.home, '.claude', 'CLAUDE.md'), 'utf8')).toBe(
+        '# Updated synthetic instructions\n',
+      );
+
+      expect((await call({ method: 'DELETE', url: `${prefix}/files/${id}` })).statusCode).toBe(200);
+      expect(existsSync(join(fixture.home, '.claude', 'CLAUDE.md'))).toBe(false);
+
+      const otherProject = join(fixture.root, 'another-project');
+      mkdirSync(otherProject);
+      const added = await call({
+        method: 'POST',
+        url: `${prefix}/projects`,
+        payload: { path: otherProject },
+      });
+      expect(added.statusCode).toBe(200);
+      expect(added.json<{ roots: string[] }>().roots).toContain(otherProject);
+    });
+
+    it('keeps authenticated edits and deletions blocked in read-only mode', async () => {
+      await app.close();
+      await start({ readOnly: true });
+      const handlers = [
+        vi.spyOn(HarnessService.prototype, 'writeDocument'),
+        vi.spyOn(HarnessService.prototype, 'deleteFile'),
+        vi.spyOn(HarnessService.prototype, 'removeMcpServer'),
+        vi.spyOn(HarnessService.prototype, 'writeCapabilityDocument'),
+      ];
+
+      for (const [method, path] of [
+        ['PUT', '/files/synthetic-id'],
+        ['DELETE', '/files/synthetic-id'],
+        ['DELETE', '/files/synthetic-id/mcp/synthetic-server'],
+        ['PUT', '/capabilities/synthetic-id'],
+      ] as const) {
+        const response = await call({
+          method,
+          url: `${prefix}${path}`,
+          payload: { content: '# Updated', expectedHash: 'synthetic-hash', name: 'updated' },
+        });
+        expect(response.statusCode).toBe(403);
+        expect(response.json()).toMatchObject({ code: 'read-only' });
+      }
+      for (const handler of handlers) expect(handler).not.toHaveBeenCalled();
+    });
+
+    it('keeps health public, including query strings, without exempting other reads', async () => {
+      expect((await call({ url: `${prefix}/health?check=true`, token: null })).statusCode).toBe(
+        200,
+      );
+      expect((await call({ url: `${prefix}/about?check=true`, token: null })).statusCode).toBe(401);
+    });
+  },
+);
 
 describe('read routes', () => {
   it('returns an overview with a summary, findings, and a tree', async () => {
